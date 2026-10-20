@@ -4,6 +4,8 @@ import pg from 'pg';
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 // Validated database connection URL lene ke liye
 import { env } from '../config/env.js';
+// All Drizzle ORM table schemas & relational mappings
+import * as schema from './schema/index.js';
 
 const { Pool } = pg;
 
@@ -25,15 +27,16 @@ pool.on('error', (err: Error) => {
 });
 
 /**
- * Type-Safe Drizzle ORM Instance.
+ * Type-Safe Drizzle ORM Instance with Relational Query API.
  * Poore application me database queries, transactions, aur vector searches
  * isi `db` instance ke through execute hongi.
  */
 export const db = drizzle(pool, {
+  schema,
   logger: env.NODE_ENV === 'development', // Development me generated SQL queries console me log hongi
 });
 
-export type DbClient = NodePgDatabase;
+export type DbClient = NodePgDatabase<typeof schema>;
 
 /**
  * Checks PostgreSQL server connectivity and health.
