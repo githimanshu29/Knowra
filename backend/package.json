@@ -1,15 +1,27 @@
 {
-  "name": "backend",
+  "name": "knowra-backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Enterprise Knowledge Intelligence Platform - Node.js TypeScript Backend",
+  "main": "dist/server.js",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "rag",
+    "langgraph",
+    "pgvector",
+    "enterprise-ai",
+    "typescript"
+  ],
+  "author": "Enterprise AI Engineering Team",
   "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
     "@langchain/core": "^1.2.19",
     "@langchain/langgraph": "^1.5.1",
