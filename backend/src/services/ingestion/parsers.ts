@@ -302,14 +302,42 @@ function parseCsv(
   };
 }
 
+// TypeScript Concept: Interface Polymorphism
+// Allows callers to pass either positional arguments or a structured options object
+export interface ParseDocumentOptions {
+  buffer?: Buffer;
+  fileBuffer?: Buffer;
+  filename?: string;
+  fileName?: string;
+  mimeType: string;
+  accessLevel?: AccessLevel;
+}
+
 // Central entry point for parsing any supported document format
-// returns: Promise<ParsedDocument> with validated metadata (source, page, timestamp, docType, accessLevel)
+// returns: Promise<ParsedDocument> with validated metadata
 export async function parseDocument(
-  buffer: Buffer,
-  filename: string,
-  mimeType: string,
-  accessLevel: AccessLevel = 'public_tenant'
+  bufferOrOptions: Buffer | ParseDocumentOptions,
+  rawFilename?: string,
+  rawMimeType?: string,
+  rawAccessLevel: AccessLevel = 'public_tenant'
 ): Promise<ParsedDocument> {
+  let buffer: Buffer;
+  let filename: string;
+  let mimeType: string;
+  let accessLevel: AccessLevel;
+
+  if (Buffer.isBuffer(bufferOrOptions)) {
+    buffer = bufferOrOptions;
+    filename = rawFilename || 'unknown-document';
+    mimeType = rawMimeType || 'text/plain';
+    accessLevel = rawAccessLevel;
+  } else {
+    buffer = bufferOrOptions.buffer || bufferOrOptions.fileBuffer || Buffer.from('');
+    filename = bufferOrOptions.filename || bufferOrOptions.fileName || 'unknown-document';
+    mimeType = bufferOrOptions.mimeType || 'text/plain';
+    accessLevel = bufferOrOptions.accessLevel || 'public_tenant';
+  }
+
   const timestamp = new Date().toISOString();
 
   if (mimeType === 'application/pdf' || filename.endsWith('.pdf')) {

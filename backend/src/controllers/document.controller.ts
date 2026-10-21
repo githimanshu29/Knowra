@@ -8,6 +8,8 @@ import { db } from '../db/index.js';
 import { documentVersions, documents, ingestionJobs } from '../db/schema/index.js';
 // File storage helpers
 import { computeFileHash, saveFile } from '../services/storage.service.js';
+// Background ingestion worker trigger
+import { triggerIngestionWorker } from '../services/ingestion/worker.js';
 
 // Handles multipart document upload, sha256 duplicate detection, and queuing
 // returns: Promise<void> responds with 201 json { documentId: string, jobId: string, status: string }
@@ -87,6 +89,9 @@ export async function uploadDocument(req: Request, res: Response, next: NextFunc
         status: newDoc.status,
       };
     });
+
+    // Triggers background ingestion pipeline without blocking client response
+    triggerIngestionWorker(result.jobId);
 
     res.status(201).json(result);
   } catch (error) {

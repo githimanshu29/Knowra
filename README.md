@@ -165,5 +165,379 @@ Expected Response:
 
 ---
 
+
+
+
+
+
+
+# 🏛️ Knowra Enterprise Advanced RAG: Complete System Architecture & Flow Map
+
+Is document me **Knowra Platform** ka complete end-to-end architecture mapped hai. Isme **Ingestion Pipeline**, **Hierarchical Chunking**, **Embeddings Engine**, **PostgreSQL Storage (pgvector + tsvector)**, **Redis Caching Layer**, **Hybrid Retrieval (RRF)**, **Parent Context Swapping**, aur **LangGraph Agentic Orchestration** ko visually explain kiya gaya hai.
+
+---
+
+## 🗺️ 1. Master System Architecture Diagram
+
+```text
+══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+                                       KNOWRA ENTERPRISE RAG ARCHITECTURE
+══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+                                 ┌──────────────────────────────────────────────┐
+                                 │              ENTERPRISE CLIENT               │
+                                 │   (Web Dashboard / API / Enterprise Slack)   │
+                                 └──────────────┬────────────────┬──────────────┘
+                                                │                │
+                        [A] Document Upload     │                │   [B] Search / Chat Query
+                        (Multipart Form-Data)   │                │   (JWT Bearer Token)
+                                                ▼                ▼
+┌───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                          EXPRESS 5 API GATEWAY LAYER                                              │
+├───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│  • authenticate (JWT Verification + Tenant Context Extraction)                                                    │
+│  • requireRoles (RBAC Authorization: Admin / Legal / Engineering / Viewer)                                        │
+│  • upload.single('file') (Multer Memory Buffer Ceiling: 50MB)                                                     │
+└───────────────────────┬────────────────────────────────────────────────────────┬──────────────────────────────────┘
+                        │                                                        │
+                        ▼                                                        ▼
+   ┌─────────────────────────────────────────┐              ┌─────────────────────────────────────────┐
+   │        INGESTION CONTROLLER             │              │          RETRIEVAL CONTROLLER           │
+   │  • SHA-256 Checksum Duplicate Guard     │              │  • Tenant & Role Scope Extraction       │
+   │  • saveFile (Tenant Isolated Disk)      │              │  • L1/L2 Redis Cache Check              │
+   │  • Atomic DB Transaction (Doc+Version)  │              │  • LangGraph Stateful Workflow Trigger  │
+   └────────────────────┬────────────────────┘              └────────────────────┬────────────────────┘
+                        │                                                        │
+                        ▼                                                        ▼
+═════════════════════════════════════════════             ══════════════════════════════════════════════════════════
+ ⚡ PHASE 1: ASYNC INGESTION PIPELINE                      🔍 PHASE 2: REAL-TIME HYBRID RETRIEVAL PIPELINE
+═════════════════════════════════════════════             ══════════════════════════════════════════════════════════
+                        │                                                        │
+                        ▼                                                        ▼
+         ┌──────────────────────────────┐                         ┌──────────────────────────────┐
+         │ triggerIngestionWorker(jobId)│                         │     REDIS CACHING LAYER      │
+         └──────────────┬───────────────┘                         │  • Exact Query Cache (TTL)   │
+                        │                                         │  • Semantic Query Cache      │
+                        ▼                                         └──────────────┬───────────────┘
+         ┌──────────────────────────────┐                                        │ (Cache Miss)
+         │   STAGE 1: STORAGE READ      │                                        ▼
+         │   uploads/<tenant>/<file>    │                         ┌──────────────────────────────┐
+         └──────────────┬───────────────┘                         │  QUERY REWRITING & EXPANSION │
+                        │                                         │  • Acronym Expansion         │
+                        ▼                                         │  • HyDE / Sub-Query Slicing  │
+         ┌──────────────────────────────┐                         └──────────────┬───────────────┘
+         │   STAGE 2: SEMANTIC PARSER   │                                        │
+         │   • PDF (pdf-parse)          │                                        ▼
+         │   • DOCX (mammoth)           │                         ┌──────────────────────────────┐
+         │   • CSV (header-row aware)   │                         │  QUERY VECTOR EMBEDDING      │
+         │   • Markdown / Text          │                         │  text-embedding-3-small      │
+         │   Attach: page, source,      │                         │  (L2 Normalized Float Array) │
+         │   timestamp, docType, RBAC   │                         └──────────────┬───────────────┘
+         └──────────────┬───────────────┘                                        │
+                        │                                                        │
+                        ▼                                                        ▼
+         ┌──────────────────────────────┐                    ┌────────────────────────────────────────┐
+         │ STAGE 3: HIERARCHICAL        │                    │      DUAL-BRANCH HYBRID SEARCH         │
+         │ SEMANTIC CHUNKER             │                    │      (PostgreSQL Hardware AVX)         │
+         │                              │                    ├───────────────────┬────────────────────┤
+         │ • Heading Breadcrumbs        │                    │ BRANCH 1: VECTOR  │ BRANCH 2: LEXICAL  │
+         │   [Context: A > B > C]       │                    │ Cosine Distance   │ tsvector (English) │
+         │                              │                    │ (<=> operator)    │ (@@ plainto_tsquery│
+         │ • Macro Parent Chunks (~800t)│                    │ Top-20 Candidates │ Top-20 Candidates  │
+         │   (parentChunkId = null)     │                    └─────────┬─────────┴──────────┬─────────┘
+         │                              │                              │                    │
+         │ • Micro Child Chunks (~200t) │                              └──────────┬─────────┘
+         │   (parentChunkId = <parent>) │                                         │
+         │                              │                                         ▼
+         │ • Table Atomic Blocks        │                    ┌────────────────────────────────────────┐
+         └──────────────┬───────────────┘                    │   RECIPROCAL RANK FUSION (RRF K=60)    │
+                        │                                    │   Merge & Deduplicate Ranked Candidates│
+                        ▼                                    └────────────────────┬───────────────────┘
+         ┌──────────────────────────────┐                                         │
+         │ STAGE 4: BATCH EMBEDDER      │                                         ▼
+         │ • OpenAI text-embedding-3-sm │                    ┌────────────────────────────────────────┐
+         │ • Batch Size: 64             │                    │     CROSS-ENCODER RERANKER (Top 5)     │
+         │ • L2 Euclidean Normalization │                    │     High Precision Semantic Scoring    │
+         │ • (Deterministic Fallback)   │                    └────────────────────┬───────────────────┘
+         └──────────────┬───────────────┘                                         │
+                        │                                                         ▼
+                        │                                    ┌────────────────────────────────────────┐
+                        │                                    │   PARENT CONTEXT SWAPPING ENGINE       │
+                        │                                    │   Child Chunks match search ➔ Fetch    │
+                        │                                    │   Full 800-Token Macro Parent Chunks   │
+                        │                                    └────────────────────┬───────────────────┘
+                        │                                                         │
+                        ▼                                                         ▼
+══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+ 💾 SHARED PERSISTENCE & DATA STORAGE LAYER
+══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+       ▲                                                                          ▲
+       │ Batch INSERT INTO chunks                                                 │ SELECT <=> / @@
+       │                                                                          │
+ ┌─────┴──────────────────────────────────────────────────────────────────────────┴───────────────────────────────┐
+ │                                   POSTGRESQL 16 (WITH PGVECTOR & TSVECTOR)                                    │
+ ├───────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │  • tenants:             id, name, slug, is_active                                                              │
+ │  • users & roles:       id, tenant_id, email, password_hash, role_name                                         │
+ │  • documents:           id, tenant_id, title, content_hash, storage_path, status ('READY'|'ERROR')             │
+ │  • document_versions:   id, document_id, version_number, summary                                               │
+ │  • ingestion_jobs:      id, tenant_id, document_id, status ('COMPLETED'), progress_percent (100)               │
+ │  • chunks:              id, tenant_id, document_id, parent_chunk_id, content, token_count, heading_path,       │
+ │                         embedding vector(1536) [HNSW Index], search_vector tsvector [GIN Index]               │
+ └───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                                                  │
+                                                                                  ▼
+══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+ 🤖 PHASE 3: LANGGRAPH STATEFUL AGENTIC ORCHESTRATION & GENERATION
+══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+                                                                                  │
+                        ┌─────────────────────────────────────────────────────────┴────────────────────────┐
+                        ▼                                                                                  │
+ ┌──────────────────────────────────────────────┐                                                          │
+ │ LANGGRAPH NODE 1: CONTEXT COMPRESSION & FIT  │                                                          │
+ │ • Assemble Parent Context within 4000 tokens │                                                          │
+ │ • Format Evidence with Markdown Markers      │                                                          │
+ └──────────────────────┬───────────────────────┘                                                          │
+                        │                                                                                  │
+                        ▼                                                                                  │
+ ┌──────────────────────────────────────────────┐                                                          │
+ │ LANGGRAPH NODE 2: GROUNDED GENERATION (LLM)  │                                                          │
+ │ • System Prompt: Strict Evidence Grounding   │                                                          │
+ │ • In-line Citation Generation [Source: Page] │                                                          │
+ └──────────────────────┬───────────────────────┘                                                          │
+                        │                                                                                  │
+                        ▼                                                                                  │
+ ┌──────────────────────────────────────────────┐                                                          │
+ │ LANGGRAPH NODE 3: HALLUCINATION & FACT CHECK │                                                          │
+ │ • Claim vs Retrieved Passage Verification    │                                                          │
+ │ • If claims not in context ➔ Safe Abstention │                                                          │
+ └──────────────────────┬───────────────────────┘                                                          │
+                        │                                                                                  │
+                        ▼                                                                                  ▼
+ ┌──────────────────────────────────────────────┐                                        ┌────────────────────────┐
+ │ STREAMING CLIENT RESPONSE                    │                                        │  REDIS CACHE WRITE     │
+ │ • Verified Synthesized Answer                │                                        │  Save Query + Answer   │
+ │ • Clickable Citations [doc_id, page, source] ├───────────────────────────────────────▶│  (TTL: 1 Hour)         │
+ │ • Execution Latency Breakdown                │                                        └────────────────────────┘
+ └──────────────────────────────────────────────┘
+```
+
+---
+
+## 🧩 2. Core Components & Folder Structure
+
+Knowra ka codebase clean enterprise modular patterns me structured hai:
+
+```text
+e:\AI\Advance-RAG\
+├── backend\
+│   ├── src\
+│   │   ├── config\                 # Zod validated environment variables (DATABASE_URL, JWT, OpenAI, Redis)
+│   │   ├── db\
+│   │   │   ├── schema\             # Drizzle ORM Relational Schemas
+│   │   │   │   ├── auth.ts         # tenants, users, roles, user_roles
+│   │   │   │   ├── documents.ts    # documents, document_versions, chunks, ingestion_jobs
+│   │   │   │   └── index.ts        # Central schema re-exports
+│   │   │   └── index.ts            # PostgreSQL Pool & Drizzle Client
+│   │   ├── middleware\             # Express Middlewares
+│   │   │   ├── auth.ts             # JWT authentication & requireRoles RBAC guard
+│   │   │   ├── upload.ts           # Multer 50MB ceiling, MIME filter
+│   │   │   └── errorHandler.ts     # Global error catching & standard JSON error responses
+│   │   ├── services\
+│   │   │   ├── storage.service.ts  # SHA-256 duplicate hash, tenant-isolated disk storage
+│   │   │   ├── ingestion\          # Phase 1: Ingestion Engine
+│   │   │   │   ├── parsers.ts      # Multi-format page-aware parsers (PDF, DOCX, CSV, TXT, MD)
+│   │   │   │   ├── chunker.ts      # Hierarchical Semantic Chunker (Parent-Child, Breadcrumbs)
+│   │   │   │   ├── embedder.ts     # OpenAI text-embedding-3-small batch embedder + Normalizer
+│   │   │   │   └── worker.ts       # 7-Stage state machine job runner
+│   │   │   └── retrieval\          # Phase 2: Hybrid Search Engine (Next Step)
+│   │   │       ├── hybridSearch.ts # pgvector <=> + tsvector @@ + Reciprocal Rank Fusion
+│   │   │       ├── reranker.ts     # Cross-encoder precision reranker
+│   │   │       └── parentSwap.ts   # Child chunk match -> Parent macro context expansion
+│   │   ├── graph\                  # Phase 3: LangGraph Agentic Workflow
+│   │   │   ├── state.ts            # LangGraph State Definition
+│   │   │   ├── nodes\              # Query, Retrieve, Generate, CitationVerify nodes
+│   │   │   └── workflow.ts         # Compiled StateGraph workflow
+│   │   ├── controllers\            # Express API Endpoint Controllers
+│   │   ├── routes\                 # Health, Auth, Documents, Chat routes
+│   │   └── server.ts               # Express bootstrapper & graceful lifecycle
+│   └── uploads\                    # Local tenant isolated document files
+└── explain\                        # Visual Hinglish documentation & architecture guides
+```
+
+---
+
+## 🔄 3. Detailed Flow: Ingestion Pipeline (Upload ➔ Chunks)
+
+```text
+1. Client POST /api/v1/documents/upload (Headers: Authorization Bearer <token>)
+   │
+2. authenticate middleware:
+   - Validates JWT token
+   - Attaches req.user = { userId, tenantId, email, roles }
+   │
+3. upload.single('file') middleware:
+   - Memory buffer check: file size <= 50MB
+   - MIME validation: PDF, DOCX, CSV, TXT, MD
+   │
+4. document.controller.ts:
+   - Computes SHA-256 hash = crypto.createHash('sha256').update(file.buffer).digest('hex')
+   - Checks DB for duplicate hash inside this tenant:
+     • Agar already exist karta hai ➔ 200 OK (Duplicate Detected)
+     • Agar new hai ➔ Disk par write karta hai: uploads/<tenantId>/<timestamp>-<name>
+   - Runs atomic DB Transaction:
+     • INSERT INTO documents (status: 'QUEUED')
+     • INSERT INTO document_versions (version_number: 1)
+     • INSERT INTO ingestion_jobs (status: 'QUEUED', progress_percent: 0)
+   - Returns HTTP 201 Created to client immediately: { documentId, jobId, status: 'QUEUED' }
+   - Dispatches background job: triggerIngestionWorker(jobId)
+   │
+5. worker.ts (7-Stage Processing):
+   ├── Stage 1 (10%):  Set ingestion_jobs.status = 'PROCESSING'
+   ├── Stage 2 (20%):  Disk se raw file binary buffer read karta hai
+   ├── Stage 3 (30%):  parsers.ts se document ko parse karta hai:
+   │                   Output: SemanticBlock[] (headings, tables, paragraphs + page numbers)
+   ├── Stage 4 (50%):  chunker.ts se hierarchical chunks banata hai:
+   │                   • Macro Parent Chunks (~800 tokens, parentChunkId = null)
+   │                   • Micro Child Chunks (~200 tokens, parentChunkId = <parent UUID>)
+   │                   • Heading Breadcrumbs: [Context: Topic > Subtopic]
+   ├── Stage 5 (70%):  embedder.ts se OpenAI text-embedding-3-small call karta hai:
+   │                   Output: 1536-dimensional L2-normalized float arrays
+   ├── Stage 6 (85%):  PostgreSQL chunks table me batch insert (25 rows per batch):
+   │                   • embedding = 1536 floats
+   │                   • search_vector = to_tsvector('english', content)
+   └── Stage 7 (100%): Document summary update, documents.status = 'READY',
+                       ingestion_jobs.status = 'COMPLETED', progress_percent = 100.
+```
+
+---
+
+## ⚡ 4. Detailed Flow: Hybrid Retrieval & Generation Pipeline
+
+```text
+1. Client POST /api/v1/chat/query { "query": "What is our Q2 growth rate in engineering?" }
+   │
+2. Auth & Tenant Guard:
+   - Extract tenantId from JWT
+   │
+3. Redis L1 Cache Check:
+   - Key: tenant:<tenantId>:query:<queryHash>
+   - IF HIT ➔ Return cached synthesized answer with citations in 5ms!
+   - IF MISS ➔ Proceed to Hybrid Retrieval Engine
+   │
+4. Dual-Branch Search in PostgreSQL (Parallel Execution):
+   ├── Branch A: Vector Cosine Distance
+   │   - Embed user query using text-embedding-3-small (1536 floats)
+   │   - SQL: SELECT id, parent_chunk_id, content, 1 - (embedding <=> $queryVec) AS score
+   │          FROM chunks WHERE tenant_id = $tenantId AND chunk_strategy IN ('child', 'table')
+   │          ORDER BY score DESC LIMIT 20
+   │
+   └── Branch B: Lexical Full-Text Search
+       - Extract keyword tokens: 'engineering' & 'growth' & 'rate'
+       - SQL: SELECT id, parent_chunk_id, content, ts_rank_cd(search_vector, plainto_tsquery($query)) AS rank
+              FROM chunks WHERE tenant_id = $tenantId AND search_vector @@ plainto_tsquery($query)
+              ORDER BY rank DESC LIMIT 20
+   │
+5. Reciprocal Rank Fusion (RRF Algorithm, k = 60):
+   - For every candidate chunk: RRF_Score = 1/(60 + Rank_Vector) + 1/(60 + Rank_Lexical)
+   - Merges and sorts top candidates without score scaling bias
+   │
+6. Cross-Encoder Reranker:
+   - Takes top 15 RRF candidates
+   - Scores (Query, Passage) pairs using cross-attention
+   - Selects Top 3 - 5 highest scoring chunks
+   │
+7. Parent Context Swapping:
+   - Match huye child chunks ke `parent_chunk_id` ko check karta hai
+   - SQL: SELECT id, content FROM chunks WHERE id IN (child.parent_chunk_id)
+   - LLM ke prompt me 100-token ka adhoora sentence bhejne ke bajaye
+     poora 800-token macro parent paragraph inject karta hai!
+   │
+8. LangGraph Orchestration:
+   - Node 1: Prompt Context Builder (Evidence assemble karta hai)
+   - Node 2: LLM Generation (Synthesizes answer strictly citing [Document: Page])
+   - Node 3: Citation Verification Guard (Checks if citations exist in context)
+   │
+9. Return Stream to Client:
+   - Streamed answer + Verifiable Citations + Execution Latencies
+   - Writes result to Redis Cache (TTL = 1 hour)
+```
+
+---
+
+## 🗄️ 5. Database Schema Relational Map
+
+```text
+┌───────────────────────┐
+│        tenants        │
+│ id (PK)               │◀──────────┐
+│ name, slug, is_active │           │
+└───────────┬───────────┘           │
+            │ 1:N                   │
+            ▼                       │
+┌───────────────────────┐           │
+│         users         │           │
+│ id (PK)               │           │
+│ tenant_id (FK)        │           │
+│ email, password_hash  │           │
+└───────────┬───────────┘           │
+            │ 1:N                   │
+            ▼                       │
+┌───────────────────────┐           │
+│      user_roles       │           │
+│ user_id, role_id      │           │
+└───────────────────────┘           │
+                                    │
+┌───────────────────────────────────┼───────────────────────────────────┐
+│ DOCUMENTS & CHUNKS HIERARCHY      │                                   │
+│                                   │                                   │
+│  ┌─────────────────────────┐      │                                   │
+│  │        documents        │      │                                   │
+│  │ id (PK)                 │      │                                   │
+│  │ tenant_id (FK) ─────────┼──────┘                                   │
+│  │ storage_path, hash      │                                          │
+│  │ status ('READY'|'ERROR')│                                          │
+│  └────────────┬────────────┘                                          │
+│               │ 1:N                                                   │
+│               ▼                                                       │
+│  ┌─────────────────────────┐         ┌─────────────────────────────┐  │
+│  │    document_versions    │         │       ingestion_jobs        │  │
+│  │ id (PK)                 │         │ id (PK)                     │  │
+│  │ document_id (FK)        │◀────────┤ document_id (FK)            │  │
+│  │ version_number, summary │         │ status, progress_percent    │  │
+│  └────────────┬────────────┘         └─────────────────────────────┘  │
+│               │ 1:N                                                   │
+│               ▼                                                       │
+│  ┌──────────────────────────────────────────────────────────────┐     │
+│  │                            chunks                            │     │
+│  │ id (PK)                                                      │     │
+│  │ tenant_id (FK -> tenants.id CASCADE)                         │     │
+│  │ document_id (FK -> documents.id CASCADE)                     │     │
+│  │ version_id (FK -> document_versions.id CASCADE)              │     │
+│  │ parent_chunk_id (UUID Self-Reference ──┐)                    │     │
+│  │ chunk_strategy ('parent' | 'child' | 'table' | 'semantic')   │     │
+│  │ content (text with context breadcrumbs)                      │     │
+│  │ token_count (int)                                            │     │
+│  │ heading_path (varchar)                                       │     │
+│  │ embedding (vector 1536) ────▶ [HNSW Index for Cosine Search] │     │
+│  │ search_vector (tsvector) ───▶ [GIN Index for Lexical Search] │     │
+│  └───────────────────────────────────────▲──────────────────────┘     │
+│                                          │                            │
+│                                          └─ (parentChunkId links)     │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
 ## 📄 License
 This project is licensed under the ISC License.
