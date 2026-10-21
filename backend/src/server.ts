@@ -12,6 +12,8 @@ import { closeDatabaseConnection } from './db/index.js';
 import { healthRouter } from './routes/health.routes.js';
 // Authentication and multi-tenant user routes
 import { authRouter } from './routes/auth.routes.js';
+// Document management and file upload routes
+import { documentRouter } from './routes/document.routes.js';
 // Centralized error handler middleware
 import { errorHandler } from './middleware/errorHandler.js';
 
@@ -36,6 +38,7 @@ app.get('/', (req: Request, res: Response): void => {
 // Route Mounts
 app.use('/health', healthRouter);
 app.use('/api/v1/auth', authRouter);
+app.use('/api/v1/documents', documentRouter);
 
 // Centralized error handler must be registered after all route handlers
 app.use(errorHandler);
