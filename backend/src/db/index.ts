@@ -54,6 +54,7 @@ export async function checkDatabaseConnection(): Promise<boolean> {
       // Simple SELECT 1 query execute karke health check karte hain
       // Result format: { rows: [ { '?column?': 1 } ], rowCount: 1 }
       await client.query('SELECT 1');
+      console.log("✅🌐connection success")
       return true;
     } finally {
       client.release(); // Connection wapas pool me release karte hain
