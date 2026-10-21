@@ -10,6 +10,8 @@ import { env } from './config/env.js';
 import { closeDatabaseConnection } from './db/index.js';
 // Health check routes
 import { healthRouter } from './routes/health.routes.js';
+// Authentication and multi-tenant user routes
+import { authRouter } from './routes/auth.routes.js';
 // Centralized error handler middleware
 import { errorHandler } from './middleware/errorHandler.js';
 
@@ -33,6 +35,7 @@ app.get('/', (req: Request, res: Response): void => {
 
 // Route Mounts
 app.use('/health', healthRouter);
+app.use('/api/v1/auth', authRouter);
 
 // Centralized error handler must be registered after all route handlers
 app.use(errorHandler);
