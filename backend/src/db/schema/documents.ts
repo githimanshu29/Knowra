@@ -65,6 +65,9 @@ export const documentPermissions = pgTable('document_permissions', {
 // 4. Chunks Table with Vector and Full-Text Search Columns
 export const chunks = pgTable('chunks', {
   id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id')
+    .references(() => tenants.id, { onDelete: 'cascade' })
+    .notNull(),
   documentId: uuid('document_id')
     .references(() => documents.id, { onDelete: 'cascade' })
     .notNull(),
@@ -142,6 +145,10 @@ export const documentPermissionsRelations = relations(documentPermissions, ({ on
 }));
 
 export const chunksRelations = relations(chunks, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [chunks.tenantId],
+    references: [tenants.id],
+  }),
   document: one(documents, {
     fields: [chunks.documentId],
     references: [documents.id],

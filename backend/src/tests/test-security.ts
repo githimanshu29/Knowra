@@ -1,5 +1,5 @@
 // Test script to verify password hashing and JWT token generation
-import { comparePassword, generateAccessToken, hashPassword, verifyAccessToken } from './utils/security.js';
+import { comparePassword, generateAccessToken, hashPassword, verifyAccessToken } from '../utils/security.js';
 
 async function main() {
   console.log('Testing Password Hashing and JWT...');

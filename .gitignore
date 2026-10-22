@@ -1,4 +1,7 @@
-
 .env
 node_modules/
 explain/
+problems/
+uploads/
+dist/
+*.log

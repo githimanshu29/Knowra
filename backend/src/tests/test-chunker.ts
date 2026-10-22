@@ -1,6 +1,6 @@
 // Integration test script for Hierarchical Semantic Chunker
-import { parseDocument } from './services/ingestion/parsers.js';
-import { chunkDocument, ProcessedChunk } from './services/ingestion/chunker.js';
+import { parseDocument } from '../services/ingestion/parsers.js';
+import { chunkDocument, ProcessedChunk } from '../services/ingestion/chunker.js';
 
 // Sample enterprise markdown document simulating a multi-section knowledge base article
 const sampleEnterpriseDoc = `# Knowra Enterprise Platform

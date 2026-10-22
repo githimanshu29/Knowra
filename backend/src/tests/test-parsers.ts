@@ -1,5 +1,5 @@
 // Test script to verify document parsing and metadata extraction
-import { parseDocument } from './services/ingestion/parsers.js';
+import { parseDocument } from '../services/ingestion/parsers.js';
 
 async function main() {
   console.log('Testing Document Parsers and Metadata Extraction...');

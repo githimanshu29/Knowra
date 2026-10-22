@@ -1,5 +1,5 @@
 // Test script to verify PostgreSQL database connectivity
-import { checkDatabaseConnection, closeDatabaseConnection } from './db/index.js';
+import { checkDatabaseConnection, closeDatabaseConnection } from '../db/index.js';
 
 async function main() {
   console.log('🔍 Testing PostgreSQL connection...');

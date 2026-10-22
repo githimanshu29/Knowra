@@ -1,10 +1,10 @@
 // Integration test script for Batch Vector Embedder and Ingestion Worker
 import { eq, sql } from 'drizzle-orm';
-import { db } from './db/index.js';
-import { chunks, documents, documentVersions, ingestionJobs, tenants, users } from './db/schema/index.js';
-import { saveFile } from './services/storage.service.js';
-import { processIngestionJob } from './services/ingestion/worker.js';
-import { generateEmbedding } from './services/ingestion/embedder.js';
+import { db } from '../db/index.js';
+import { chunks, documents, documentVersions, ingestionJobs, tenants, users } from '../db/schema/index.js';
+import { saveFile } from '../services/storage.service.js';
+import { processIngestionJob } from '../services/ingestion/worker.js';
+import { generateEmbedding } from '../services/ingestion/embedder.js';
 
 // Sample enterprise markdown document for ingestion test
 const sampleEnterpriseKnowledgeDoc = `# Knowra Enterprise Knowledge Assistant
@@ -60,7 +60,7 @@ async function runIngestionWorkerVerification(): Promise<void> {
       .values({
         tenantId: tenant.id,
         email: `admin-${Date.now()}@knowra.ai`,
-        passwordHash: 'dummy-hash-for-testing',
+        hashedPassword: 'dummy-hash-for-testing',
         fullName: 'Ingestion Test Admin',
       })
       .returning();
