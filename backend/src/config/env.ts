@@ -47,6 +47,7 @@ const envSchema = z.object({
   // 6. External Providers & Observability (LangSmith & OpenAI)
   // -------------------------------------------------------------------------
   OPENAI_API_KEY: z.string().optional(),
+  COHERE_API_KEY: z.string().optional(),
   LANGCHAIN_TRACING_V2: z.coerce.boolean().default(false),
   LANGCHAIN_ENDPOINT: z.string().url().default('https://api.smith.langchain.com'),
   LANGCHAIN_API_KEY: z.string().optional(),

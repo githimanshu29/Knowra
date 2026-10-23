@@ -14,6 +14,8 @@ import { healthRouter } from './routes/health.routes.js';
 import { authRouter } from './routes/auth.routes.js';
 // Document management and file upload routes
 import { documentRouter } from './routes/document.routes.js';
+// Chat intelligence and streaming SSE routes
+import chatRouter from './routes/chat.routes.js';
 // Centralized error handler middleware
 import { errorHandler } from './middleware/errorHandler.js';
 
@@ -39,6 +41,7 @@ app.get('/', (req: Request, res: Response): void => {
 app.use('/health', healthRouter);
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/documents', documentRouter);
+app.use('/api/v1/chat', chatRouter);
 
 // Centralized error handler must be registered after all route handlers
 app.use(errorHandler);
@@ -67,5 +70,7 @@ export function startServer(): Server {
   return server;
 }
 
-// Auto-start server when run directly
-startServer();
+// Auto-start server when run directly outside of test runners
+if (!process.argv[1]?.includes('test')) {
+  startServer();
+}
