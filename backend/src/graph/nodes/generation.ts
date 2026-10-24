@@ -4,6 +4,8 @@ import OpenAI from 'openai';
 import { KnowraAgentState } from '../state.js';
 // Environment variables
 import { env } from '../../config/env.js';
+// PII redaction service for sanitizing evidence contexts
+import { redactPii } from '../../services/security/guardrails.js';
 
 // OpenAI client instance initialized conditionally
 const openaiClient = env.OPENAI_API_KEY ? new OpenAI({ apiKey: env.OPENAI_API_KEY }) : null;
@@ -65,6 +67,9 @@ export async function generationNode(state: KnowraAgentState): Promise<Partial<K
 
   if (openaiClient) {
     try {
+      // Sanitize evidence context to ensure no PII is transmitted to external model
+      const sanitizedEvidence = redactPii(state.assembledContext).sanitizedText;
+
       const completion = await openaiClient.chat.completions.create({
         model: 'gpt-4o-mini',
         temperature: 0,
@@ -72,7 +77,7 @@ export async function generationNode(state: KnowraAgentState): Promise<Partial<K
           { role: 'system', content: SYSTEM_PROMPT },
           {
             role: 'user',
-            content: `User Query:\n${state.query}\n\nEnterprise Evidence:\n${state.assembledContext}`,
+            content: `User Query:\n${state.query}\n\nEnterprise Evidence:\n${sanitizedEvidence}`,
           },
         ],
       });

@@ -12,6 +12,8 @@ export interface CitationItem {
   headingPath: string | null;
   snippet: string;
 }
+// PII entity match interface from security service
+import { PiiEntityMatch } from '../services/security/guardrails.js';
 
 // TypeScript Concept: Annotation / State Definition
 // Complete state maintained throughout the LangGraph agent execution lifecycle
@@ -23,6 +25,9 @@ export interface KnowraAgentState {
   roleIds?: string[];
   isSuperAdmin?: boolean;
   isConversationalOnly?: boolean;
+  isSecurityFlagged?: boolean;
+  securityViolationReason?: string;
+  piiEntitiesDetected?: PiiEntityMatch[];
   retrievedCandidates: HybridSearchResult[];
   rerankedEvidence: RerankedCandidate[];
   assembledContext: string;
@@ -59,6 +64,8 @@ export function createInitialState(
     roleIds: options.roleIds,
     isSuperAdmin: options.isSuperAdmin || false,
     isConversationalOnly: false,
+    isSecurityFlagged: false,
+    piiEntitiesDetected: [],
     retrievedCandidates: [],
     rerankedEvidence: [],
     assembledContext: '',

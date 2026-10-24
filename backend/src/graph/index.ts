@@ -45,6 +45,18 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, update) => update,
     default: () => false,
   }),
+  isSecurityFlagged: Annotation<boolean | undefined>({
+    reducer: (_, update) => update,
+    default: () => false,
+  }),
+  securityViolationReason: Annotation<string | undefined>({
+    reducer: (_, update) => update,
+    default: () => undefined,
+  }),
+  piiEntitiesDetected: Annotation<any[]>({
+    reducer: (_, update) => update,
+    default: () => [],
+  }),
   retrievedCandidates: Annotation<HybridSearchResult[]>({
     reducer: (_, update) => update,
     default: () => [],
@@ -79,9 +91,12 @@ export const AgentStateAnnotation = Annotation.Root({
   }),
 });
 
-// Conditional routing helper to skip retrieval for pure conversational queries
+// Conditional routing helper to skip retrieval for pure conversational queries or halt on security alerts
 // returns: string
 function routeAfterQueryAnalysis(state: typeof AgentStateAnnotation.State): string {
+  if (state.isSecurityFlagged) {
+    return 'securityHalt';
+  }
   if (state.isConversationalOnly) {
     return 'generationNode';
   }
@@ -99,6 +114,7 @@ export function buildKnowraAgent() {
     .addNode('citationVerificationNode', citationVerificationNode)
     .addEdge(START, 'queryAnalysisNode')
     .addConditionalEdges('queryAnalysisNode', routeAfterQueryAnalysis, {
+      securityHalt: END,
       generationNode: 'generationNode',
       retrievalNode: 'retrievalNode',
     })
@@ -135,6 +151,9 @@ export async function executeKnowraQuery(
     roleIds: options.roleIds,
     isSuperAdmin: options.isSuperAdmin || false,
     isConversationalOnly: false,
+    isSecurityFlagged: false,
+    securityViolationReason: undefined,
+    piiEntitiesDetected: [],
     retrievedCandidates: [],
     rerankedEvidence: [],
     assembledContext: '',

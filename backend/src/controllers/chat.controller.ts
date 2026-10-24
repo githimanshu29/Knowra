@@ -83,10 +83,13 @@ export async function chatQueryHandler(req: Request, res: Response): Promise<voi
         sendSseEvent(res, 'token', { text: wordChunk });
       }
 
-      // 5. Emit verified citations
+      // 5. Emit verified citations and security evaluation metadata
       sendSseEvent(res, 'citations', {
         citations: finalState.citations,
         abstentionFlag: finalState.abstentionFlag,
+        isSecurityFlagged: finalState.isSecurityFlagged || false,
+        securityViolationReason: finalState.securityViolationReason,
+        piiEntitiesDetected: finalState.piiEntitiesDetected || [],
       });
 
       // 6. Emit completion with execution metrics
@@ -117,6 +120,9 @@ export async function chatQueryHandler(req: Request, res: Response): Promise<voi
       answer: finalState.generatedAnswer,
       citations: finalState.citations,
       abstentionFlag: finalState.abstentionFlag,
+      isSecurityFlagged: finalState.isSecurityFlagged || false,
+      securityViolationReason: finalState.securityViolationReason,
+      piiEntitiesDetected: finalState.piiEntitiesDetected || [],
       executionMetrics: finalState.executionMetrics,
     });
   } catch (err: unknown) {
