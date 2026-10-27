@@ -82,11 +82,14 @@ export const chunks = pgTable('chunks', {
   sectionHeading: varchar('section_heading', { length: 500 }),
   headingPath: varchar('heading_path', { length: 1000 }),
   chunkStrategy: varchar('chunk_strategy', { length: 50 }).default('semantic').notNull(),
+  embeddingModel: varchar('embedding_model', { length: 100 }).default('text-embedding-3-small').notNull(),
+  embeddingDimension: integer('embedding_dimension').default(1536).notNull(),
   embedding: vector('embedding', { dimensions: 1536 }),
   searchVector: tsvector('search_vector'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index('idx_chunks_search_vector').using('gin', table.searchVector),
+  index('idx_chunks_embedding_hnsw').using('hnsw', table.embedding.op('vector_cosine_ops')),
 ]);
 
 // 5. Ingestion Jobs Table

@@ -17,7 +17,7 @@ export async function registerTenant(req: Request, res: Response, next: NextFunc
   try {
     const input = registerTenantSchema.parse(req.body);
 
-    // existingTenant is a single object { id: string, name: string, slug: string } or undefined
+    // existingTenant is a single object or undefined
     const existingTenant = await db.query.tenants.findFirst({
       where: eq(tenants.slug, input.tenantSlug),
     });
@@ -32,7 +32,6 @@ export async function registerTenant(req: Request, res: Response, next: NextFunc
 
     // Database transaction guarantees all records are created together or all rolled back
     const result = await db.transaction(async (tx) => {
-      // newTenant is a single object { id: string, name: string, slug: string, isActive: boolean, ... }
       const [newTenant] = await tx
         .insert(tenants)
         .values({
@@ -41,7 +40,6 @@ export async function registerTenant(req: Request, res: Response, next: NextFunc
         })
         .returning();
 
-      // adminRole is a single object { id: string, tenantId: string, name: string, ... }
       const [adminRole] = await tx
         .insert(roles)
         .values({
@@ -53,7 +51,6 @@ export async function registerTenant(req: Request, res: Response, next: NextFunc
 
       const hashedPassword = await hashPassword(input.adminPassword);
 
-      // newUser is a single object { id: string, tenantId: string, email: string, fullName: string, ... }
       const [newUser] = await tx
         .insert(users)
         .values({
@@ -76,6 +73,8 @@ export async function registerTenant(req: Request, res: Response, next: NextFunc
         tenantId: newTenant.id,
         email: newUser.email,
         roles: ['ADMIN'],
+        roleIds: [adminRole.id],
+        isSuperAdmin: true,
       });
 
       return {
@@ -86,6 +85,8 @@ export async function registerTenant(req: Request, res: Response, next: NextFunc
           email: newUser.email,
           fullName: newUser.fullName,
           roles: ['ADMIN'],
+          roleIds: [adminRole.id],
+          isSuperAdmin: true,
         },
       };
     });
@@ -96,13 +97,12 @@ export async function registerTenant(req: Request, res: Response, next: NextFunc
   }
 }
 
-// Authenticates user within tenant and returns signed JWT
+// Authenticates user within tenant and returns signed JWT with role UUIDs and names
 // returns: Promise<void> responds with 200 json { token: string, user: object }
 export async function login(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const input = loginSchema.parse(req.body);
 
-    // tenant is a single object { id: string, name: string, slug: string } or undefined
     const tenant = await db.query.tenants.findFirst({
       where: eq(tenants.slug, input.tenantSlug),
     });
@@ -115,7 +115,6 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
       return;
     }
 
-    // userWithRoles is a single object with nested userRoles array or undefined
     const userWithRoles = await db.query.users.findFirst({
       where: and(eq(users.tenantId, tenant.id), eq(users.email, input.email)),
       with: {
@@ -145,14 +144,19 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
       return;
     }
 
-    // rolesList is an Array of strings: ['ADMIN', 'HR_MANAGER']
-    const rolesList = userWithRoles.userRoles.map((ur) => ur.role.name);
+    const roleNames = userWithRoles.userRoles.map((ur) => ur.role.name);
+    const roleIds = userWithRoles.userRoles.map((ur) => ur.role.id);
+    const isSuperAdmin =
+      userWithRoles.isSuperuser ||
+      roleNames.some((r) => r.toUpperCase() === 'ADMIN' || r.toUpperCase() === 'SUPER_ADMIN');
 
     const token = generateAccessToken({
       userId: userWithRoles.id,
       tenantId: tenant.id,
       email: userWithRoles.email,
-      roles: rolesList,
+      roles: roleNames,
+      roleIds: roleIds,
+      isSuperAdmin,
     });
 
     res.status(200).json({
@@ -162,9 +166,99 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
         tenantId: tenant.id,
         email: userWithRoles.email,
         fullName: userWithRoles.fullName,
-        roles: rolesList,
+        roles: roleNames,
+        roleIds: roleIds,
+        isSuperAdmin,
       },
     });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Creates a new non-admin or role-specific user within the authenticated tenant
+// returns: Promise<void> responds with 201 json { user: object }
+export async function createUserInTenant(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { email, password, fullName, roleName } = req.body;
+    const tenantId = req.user!.tenantId;
+
+    if (!email || !password || !fullName || !roleName) {
+      res.status(400).json({ error: 'Bad Request', message: 'Missing email, password, fullName, or roleName' });
+      return;
+    }
+
+    const existingUser = await db.query.users.findFirst({
+      where: and(eq(users.tenantId, tenantId), eq(users.email, email)),
+    });
+
+    if (existingUser) {
+      res.status(409).json({ error: 'Conflict', message: 'User with this email already exists in this tenant' });
+      return;
+    }
+
+    // Find or create role in tenant
+    let targetRole = await db.query.roles.findFirst({
+      where: and(eq(roles.tenantId, tenantId), eq(roles.name, roleName.toUpperCase())),
+    });
+
+    if (!targetRole) {
+      const [newRole] = await db
+        .insert(roles)
+        .values({
+          tenantId,
+          name: roleName.toUpperCase(),
+          description: `Custom tenant role: ${roleName}`,
+        })
+        .returning();
+      targetRole = newRole;
+    }
+
+    const hashedPassword = await hashPassword(password);
+
+    const createdUser = await db.transaction(async (tx) => {
+      const [newUser] = await tx
+        .insert(users)
+        .values({
+          tenantId,
+          email,
+          hashedPassword,
+          fullName,
+          isSuperuser: false,
+        })
+        .returning();
+
+      await tx.insert(userRoles).values({
+        userId: newUser.id,
+        roleId: targetRole!.id,
+      });
+
+      return {
+        id: newUser.id,
+        tenantId,
+        email: newUser.email,
+        fullName: newUser.fullName,
+        roles: [targetRole!.name],
+        roleIds: [targetRole!.id],
+      };
+    });
+
+    res.status(201).json({ user: createdUser });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Lists all RBAC roles configured for the authenticated tenant
+// returns: Promise<void> responds with 200 json { roles: Array<Role> }
+export async function listTenantRoles(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const tenantId = req.user!.tenantId;
+    const tenantRoles = await db.query.roles.findMany({
+      where: eq(roles.tenantId, tenantId),
+    });
+
+    res.status(200).json({ roles: tenantRoles });
   } catch (error) {
     next(error);
   }

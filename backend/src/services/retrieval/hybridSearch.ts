@@ -120,7 +120,7 @@ async function executeVectorBranch(
                       WHERE dp.document_id = d.id 
                         AND (
                           dp.user_id = ${userId}
-                          ${roleIds && roleIds.length > 0 ? sql`OR dp.role_id IN (${sql.join(roleIds.map((r) => sql`${r}`), sql`, `)})` : sql``}
+                          ${roleIds && roleIds.length > 0 ? sql`OR dp.role_id IN (${sql.join(roleIds.map((r) => sql`${r}::uuid`), sql`, `)})` : sql``}
                         )
                     )`
                   : sql``
@@ -156,6 +156,15 @@ async function executeLexicalBranch(
 ): Promise<Array<RawCandidateRow & { lexicalScore: number }>> {
   if (!cleanQuery || cleanQuery.length === 0) return [];
 
+  // Extract non-stopword alphanumeric keywords for flexible OR prefix matching
+  const keywords = cleanQuery
+    .replace(/[^a-zA-Z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .map((w) => w.trim())
+    .filter((w) => w.length > 2);
+
+  const orQueryTerms = keywords.map((k) => `${k}:*`).join(' | ');
+
   // rawLexicalRows is an Array of Objects returned by the pg driver
   const rawLexicalRows = await db.execute(sql`
     SELECT 
@@ -171,13 +180,17 @@ async function executeLexicalBranch(
       c.section_heading,
       c.heading_path,
       c.chunk_strategy,
-      ts_rank_cd(c.search_vector, plainto_tsquery('english', ${cleanQuery})) AS score
+      ts_rank_cd(c.search_vector, websearch_to_tsquery('english', ${cleanQuery})) + 
+      ${orQueryTerms.length > 0 ? sql`0.5 * ts_rank_cd(c.search_vector, to_tsquery('english', ${orQueryTerms}))` : sql`0`} AS score
     FROM chunks c
     INNER JOIN documents d ON c.document_id = d.id
     WHERE c.tenant_id = ${tenantId}
       AND d.status = 'READY'
       AND c.chunk_strategy IN ('child', 'table', 'semantic')
-      AND c.search_vector @@ plainto_tsquery('english', ${cleanQuery})
+      AND (
+        c.search_vector @@ websearch_to_tsquery('english', ${cleanQuery})
+        ${orQueryTerms.length > 0 ? sql`OR c.search_vector @@ to_tsquery('english', ${orQueryTerms})` : sql``}
+      )
       ${
         isSuperAdmin
           ? sql``
@@ -191,7 +204,7 @@ async function executeLexicalBranch(
                       WHERE dp.document_id = d.id 
                         AND (
                           dp.user_id = ${userId}
-                          ${roleIds && roleIds.length > 0 ? sql`OR dp.role_id IN (${sql.join(roleIds.map((r) => sql`${r}`), sql`, `)})` : sql``}
+                          ${roleIds && roleIds.length > 0 ? sql`OR dp.role_id IN (${sql.join(roleIds.map((r) => sql`${r}::uuid`), sql`, `)})` : sql``}
                         )
                     )`
                   : sql``

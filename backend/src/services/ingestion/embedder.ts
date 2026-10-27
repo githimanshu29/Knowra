@@ -40,12 +40,11 @@ export function normalizeVector(vector: number[]): number[] {
   return normalized;
 }
 
-// Generates a deterministic normalized pseudo-embedding for testing or offline environments
+// Test utility: Generates a deterministic normalized pseudo-embedding explicitly for offline unit tests
 // returns: number[] 1536-dimensional unit float vector
-export function generateDeterministicMockEmbedding(text: string, dimensions: number = 1536): number[] {
+export function generateTestMockEmbedding(text: string, dimensions: number = 1536): number[] {
   const vector: number[] = new Array(dimensions);
 
-  // Seed values deterministically from text characters
   let hash = 0;
   for (let i = 0; i < text.length; i++) {
     hash = (hash << 5) - hash + text.charCodeAt(i);
@@ -53,7 +52,6 @@ export function generateDeterministicMockEmbedding(text: string, dimensions: num
   }
 
   for (let i = 0; i < dimensions; i++) {
-    // Generate pseudo-random distribution between -1 and 1
     const x = Math.sin(hash + i * 0.12345);
     vector[i] = x;
   }
@@ -61,14 +59,13 @@ export function generateDeterministicMockEmbedding(text: string, dimensions: num
   return normalizeVector(vector);
 }
 
-// Generates a single vector embedding for a given text string
+// Generates a single vector embedding for a given text string using OpenAI API
 // returns: Promise<number[]> 1536-dimensional float vector
 export async function generateEmbedding(text: string): Promise<number[]> {
   const client = getOpenAIClient();
 
   if (!client) {
-    // Fallback to deterministic pseudo-embedding when api key is not configured
-    return generateDeterministicMockEmbedding(text, env.EMBEDDING_DIMENSION);
+    throw new Error('Vector embedding generation failed: OPENAI_API_KEY is not configured');
   }
 
   try {
@@ -77,12 +74,10 @@ export async function generateEmbedding(text: string): Promise<number[]> {
       input: text.replace(/\n/g, ' '),
     });
 
-    // response is an OpenAI EmbeddingResponse object
     const rawVector = response.data[0].embedding;
     return normalizeVector(rawVector);
   } catch (error) {
-    console.warn('OpenAI embedding call failed, falling back to deterministic vector:', (error as Error).message);
-    return generateDeterministicMockEmbedding(text, env.EMBEDDING_DIMENSION);
+    throw new Error(`OpenAI embedding request failed: ${(error as Error).message}`);
   }
 }
 
@@ -95,16 +90,12 @@ export async function batchGenerateEmbeddings(
   if (texts.length === 0) return [];
 
   const client = getOpenAIClient();
-  const allEmbeddings: number[][] = [];
 
-  // If no OpenAI key configured process via deterministic mock generator
   if (!client) {
-    for (const text of texts) {
-      allEmbeddings.push(generateDeterministicMockEmbedding(text, env.EMBEDDING_DIMENSION));
-    }
-    // allEmbeddings is an Array of 1536-dimensional number arrays
-    return allEmbeddings;
+    throw new Error('Batch vector embedding generation failed: OPENAI_API_KEY is not configured');
   }
+
+  const allEmbeddings: number[][] = [];
 
   // Process texts in sequential batches
   for (let i = 0; i < texts.length; i += batchSize) {
@@ -122,10 +113,7 @@ export async function batchGenerateEmbeddings(
         allEmbeddings.push(normalizeVector(item.embedding));
       }
     } catch (error) {
-      console.warn(`Batch embedding error on slice ${i} to ${i + batchSize}, using fallback:`, (error as Error).message);
-      for (const text of batchTexts) {
-        allEmbeddings.push(generateDeterministicMockEmbedding(text, env.EMBEDDING_DIMENSION));
-      }
+      throw new Error(`Batch embedding request failed on slice ${i} to ${i + batchSize}: ${(error as Error).message}`);
     }
   }
 

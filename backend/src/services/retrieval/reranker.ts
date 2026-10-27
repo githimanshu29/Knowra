@@ -41,7 +41,7 @@ function extractWords(text: string): string[] {
   return words ? words : [];
 }
 
-// Calculates semantic cross-encoder score using token alignment, bigrams, and query coverage
+// Calculates term coverage, bigram phrase match, and heading context heuristic score
 // returns: number
 function calculateCrossScore(query: string, content: string, headingPath: string | null): number {
   const queryTokens = extractWords(query);
@@ -150,13 +150,15 @@ export async function rerankCandidates(
         }
 
         return rerankedList;
+      } else {
+        console.warn(`Cohere reranking returned non-ok status: ${response.status}. Using lexical overlap heuristic.`);
       }
-    } catch {
-      // Fallback cleanly to internal cross-scorer if external API call encounters network error
+    } catch (error) {
+      console.warn('Cohere rerank failed, using lexical overlap heuristic reranking fallback:', (error as Error).message);
     }
   }
 
-  // Internal semantic cross-scoring engine
+  // Heuristic lexical alignment and bigram overlap reranker
   const scoredList: RerankedCandidate[] = [];
   for (let i = 0; i < candidates.length; i++) {
     const c = candidates[i];

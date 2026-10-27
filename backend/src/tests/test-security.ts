@@ -16,6 +16,7 @@ async function main() {
     tenantId: 'e7b0a70f-90b5-4a61-8409-7815cf134261',
     email: 'arjun@acme.com',
     roles: ['HR_MANAGER', 'EMPLOYEE'],
+    roleIds: ['33333333-3333-4333-8333-333333333333'],
   };
 
   const token = generateAccessToken(payload);

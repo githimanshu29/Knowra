@@ -77,11 +77,19 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, update) => update,
     default: () => [],
   }),
+  groundingScore: Annotation<number | undefined>({
+    reducer: (_, update) => update,
+    default: () => 1.0,
+  }),
   abstentionFlag: Annotation<boolean>({
     reducer: (_, update) => update,
     default: () => false,
   }),
   abstentionReason: Annotation<string | undefined>({
+    reducer: (_, update) => update,
+    default: () => undefined,
+  }),
+  streamTokenCallback: Annotation<((token: string) => void) | undefined>({
     reducer: (_, update) => update,
     default: () => undefined,
   }),
@@ -139,6 +147,7 @@ export async function executeKnowraQuery(
     roleIds?: string[];
     isSuperAdmin?: boolean;
     messages?: BaseMessage[];
+    streamTokenCallback?: (token: string) => void;
   } = {}
 ): Promise<KnowraAgentState> {
   const totalStartTime = Date.now();
@@ -159,7 +168,9 @@ export async function executeKnowraQuery(
     assembledContext: '',
     generatedAnswer: '',
     citations: [],
+    groundingScore: 1.0,
     abstentionFlag: false,
+    streamTokenCallback: options.streamTokenCallback,
     executionMetrics: {},
   };
 

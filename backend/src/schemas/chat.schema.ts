@@ -8,8 +8,8 @@ export const chatQuerySchema = z.object({
     .min(1, 'Query cannot be empty')
     .max(2000, 'Query exceeds 2000 character maximum limit'),
   stream: z.boolean().default(false),
+  conversationId: z.string().uuid().optional(),
 });
 
-// TypeScript Concept: z.infer
-// Automatically derives the TypeScript type from the Zod validation schema
+// TypeScript Concept: Inferred Type
 export type ChatQueryInput = z.infer<typeof chatQuerySchema>;

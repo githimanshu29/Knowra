@@ -2,6 +2,24 @@
 import { randomUUID } from 'crypto';
 // SemanticBlock and DocumentChunkMetadata imported from parsers
 import { SemanticBlock, DocumentChunkMetadata, ParsedDocument } from './parsers.js';
+// Tiktoken BPE tokenizer for exact token counting
+import { get_encoding } from 'tiktoken';
+
+// Singleton tokenizer instance initialized lazily
+let tokenizerInstance: ReturnType<typeof get_encoding> | null = null;
+
+// Retrieves or initializes the shared tiktoken cl100k_base tokenizer
+// returns: ReturnType<typeof get_encoding> | null
+function getTokenizer(): ReturnType<typeof get_encoding> | null {
+  if (!tokenizerInstance) {
+    try {
+      tokenizerInstance = get_encoding('cl100k_base');
+    } catch {
+      tokenizerInstance = null;
+    }
+  }
+  return tokenizerInstance;
+}
 
 // TypeScript Concept: Interface
 // Defines the exact shape of a processed chunk ready for vector embedding and database insertion
@@ -34,10 +52,18 @@ const DEFAULT_PARENT_TARGET_TOKENS = 800;
 const DEFAULT_CHILD_TARGET_TOKENS = 200;
 const DEFAULT_CHILD_OVERLAP_TOKENS = 30;
 
-// Approximates token count using standard 4 characters per token heuristic
+// Counts exact tokens using OpenAI BPE tokenizer (cl100k_base) with heuristic fallback
 // returns: number
 export function estimateTokenCount(text: string): number {
   if (!text) return 0;
+  const tokenizer = getTokenizer();
+  if (tokenizer) {
+    try {
+      return tokenizer.encode(text).length;
+    } catch {
+      return Math.ceil(text.length / 4);
+    }
+  }
   return Math.ceil(text.length / 4);
 }
 

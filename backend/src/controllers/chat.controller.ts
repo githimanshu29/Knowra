@@ -1,5 +1,13 @@
 // Express request and response types
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
+// Drizzle query operators
+import { and, asc, desc, eq } from 'drizzle-orm';
+// LangChain message types
+import { AIMessage, BaseMessage, HumanMessage } from '@langchain/core/messages';
+// Database client instance
+import { db } from '../db/index.js';
+// Conversations and messages tables
+import { conversations, messages } from '../db/schema/index.js';
 // Zod chat validation schema
 import { chatQuerySchema } from '../schemas/chat.schema.js';
 // LangGraph agent orchestrator entrypoint
@@ -34,9 +42,36 @@ export async function chatQueryHandler(req: Request, res: Response): Promise<voi
     return;
   }
 
-  const { query, stream } = parsedBody.data;
-  const { tenantId, userId, roles } = req.user;
-  const isSuperAdmin = roles.includes('super_admin') || roles.includes('admin');
+  const { query, stream, conversationId } = parsedBody.data;
+  const { tenantId, userId, roles, roleIds } = req.user;
+  const isSuperAdmin =
+    Boolean(req.user.isSuperAdmin) ||
+    roles.some((r) => r.toUpperCase() === 'ADMIN' || r.toUpperCase() === 'SUPER_ADMIN');
+
+  // Load previous conversation history if conversationId is specified
+  let conversationHistory: BaseMessage[] = [];
+  if (conversationId) {
+    const existingConversation = await db.query.conversations.findFirst({
+      where: and(eq(conversations.id, conversationId), eq(conversations.tenantId, tenantId)),
+    });
+
+    if (!existingConversation) {
+      res.status(404).json({ error: 'Not Found', message: 'Conversation not found' });
+      return;
+    }
+
+    const previousMsgs = await db.query.messages.findMany({
+      where: eq(messages.conversationId, conversationId),
+      orderBy: [asc(messages.createdAt)],
+    });
+
+    conversationHistory = previousMsgs.map((m) => {
+      if (m.role === 'assistant') {
+        return new AIMessage(m.content);
+      }
+      return new HumanMessage(m.content);
+    });
+  }
 
   // Case 1: Server-Sent Events (SSE) Streaming Response
   if (stream) {
@@ -54,45 +89,62 @@ export async function chatQueryHandler(req: Request, res: Response): Promise<voi
     });
 
     try {
-      // 1. Emit query analysis event
+      // Emit query analysis event
       sendSseEvent(res, 'status', {
         step: 'analysis',
         message: 'Analyzing user query and intent...',
       });
 
-      // 2. Execute full LangGraph orchestrator
+      // Execute full LangGraph orchestrator with real-time token streaming callback
       const finalState = await executeKnowraQuery(query, tenantId, {
         userId,
-        roleIds: roles,
+        roleIds: roleIds || [],
         isSuperAdmin,
+        messages: conversationHistory,
+        streamTokenCallback: (token: string) => {
+          if (!clientDisconnected) {
+            sendSseEvent(res, 'token', { text: token });
+          }
+        },
       });
 
       if (clientDisconnected) return;
 
-      // 3. Emit retrieval and reranking completion status
+      // Emit retrieval and reranking completion status
       sendSseEvent(res, 'status', {
         step: 'retrieval_complete',
         message: `Retrieved ${finalState.retrievedCandidates.length} candidate chunks, selected ${finalState.rerankedEvidence.length} evidence sources.`,
       });
 
-      // 4. Stream response tokens smoothly
-      const words = finalState.generatedAnswer.split(' ');
-      for (let i = 0; i < words.length; i++) {
-        if (clientDisconnected) return;
-        const wordChunk = (i === 0 ? '' : ' ') + words[i];
-        sendSseEvent(res, 'token', { text: wordChunk });
-      }
-
-      // 5. Emit verified citations and security evaluation metadata
+      // Emit verified citations and grounding evaluation metadata
       sendSseEvent(res, 'citations', {
         citations: finalState.citations,
+        groundingScore: finalState.groundingScore,
         abstentionFlag: finalState.abstentionFlag,
         isSecurityFlagged: finalState.isSecurityFlagged || false,
         securityViolationReason: finalState.securityViolationReason,
         piiEntitiesDetected: finalState.piiEntitiesDetected || [],
       });
 
-      // 6. Emit completion with execution metrics
+      // Persist conversation messages to database if conversationId is provided
+      if (conversationId) {
+        await db.insert(messages).values([
+          {
+            conversationId,
+            role: 'user',
+            content: query,
+          },
+          {
+            conversationId,
+            role: 'assistant',
+            content: finalState.generatedAnswer,
+            citations: finalState.citations,
+            metadata: finalState.executionMetrics,
+          },
+        ]);
+      }
+
+      // Emit completion with execution metrics
       sendSseEvent(res, 'done', {
         executionMetrics: finalState.executionMetrics,
       });
@@ -111,14 +163,34 @@ export async function chatQueryHandler(req: Request, res: Response): Promise<voi
   try {
     const finalState = await executeKnowraQuery(query, tenantId, {
       userId,
-      roleIds: roles,
+      roleIds: roleIds || [],
       isSuperAdmin,
+      messages: conversationHistory,
     });
+
+    // Persist conversation messages to database if conversationId is provided
+    if (conversationId) {
+      await db.insert(messages).values([
+        {
+          conversationId,
+          role: 'user',
+          content: query,
+        },
+        {
+          conversationId,
+          role: 'assistant',
+          content: finalState.generatedAnswer,
+          citations: finalState.citations,
+          metadata: finalState.executionMetrics,
+        },
+      ]);
+    }
 
     res.status(200).json({
       query: finalState.query,
       answer: finalState.generatedAnswer,
       citations: finalState.citations,
+      groundingScore: finalState.groundingScore,
       abstentionFlag: finalState.abstentionFlag,
       isSecurityFlagged: finalState.isSecurityFlagged || false,
       securityViolationReason: finalState.securityViolationReason,
@@ -131,5 +203,76 @@ export async function chatQueryHandler(req: Request, res: Response): Promise<voi
       error: 'Query Execution Failed',
       message: errorMessage,
     });
+  }
+}
+
+// Creates a new conversation thread for the authenticated user
+// returns: Promise<void> responds with 201 json { conversation: object }
+export async function createConversationHandler(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const tenantId = req.user!.tenantId;
+    const userId = req.user!.userId;
+    const { title = 'New Conversation' } = req.body;
+
+    const [newConv] = await db
+      .insert(conversations)
+      .values({
+        tenantId,
+        userId,
+        title,
+      })
+      .returning();
+
+    res.status(201).json({ conversation: newConv });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Lists all conversation threads belonging to authenticated user
+// returns: Promise<void> responds with 200 json { conversations: Array<Conversation> }
+export async function listConversationsHandler(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const tenantId = req.user!.tenantId;
+    const userId = req.user!.userId;
+
+    const convList = await db.query.conversations.findMany({
+      where: and(eq(conversations.tenantId, tenantId), eq(conversations.userId, userId)),
+      orderBy: [desc(conversations.updatedAt)],
+    });
+
+    res.status(200).json({ conversations: convList });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Retrieves conversation thread with chronological message history
+// returns: Promise<void> responds with 200 json { conversation: object, messages: Array<Message> }
+export async function getConversationDetailsHandler(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const tenantId = req.user!.tenantId;
+    const userId = req.user!.userId;
+    const conversationId = req.params.id as string;
+
+    const conv = await db.query.conversations.findFirst({
+      where: and(
+        eq(conversations.id, conversationId),
+        eq(conversations.tenantId, tenantId),
+        eq(conversations.userId, userId)
+      ),
+      with: {
+        messages: true,
+      },
+    });
+
+    if (!conv) {
+      res.status(404).json({ error: 'Not Found', message: 'Conversation not found' });
+      return;
+    }
+
+    res.status(200).json({ conversation: conv });
+  } catch (error) {
+    next(error);
   }
 }

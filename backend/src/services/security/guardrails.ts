@@ -45,7 +45,7 @@ const PROMPT_INJECTION_SIGNATURES: Array<{ category: string; regex: RegExp; reas
   },
   {
     category: 'JAILBREAK_PERSONA',
-    regex: /\b(act\s+as\s+dan|do\s+anything\s+now|jailbreak\s+mode|developer\s+mode\s+enabled|unfiltered\s+assistant|evil\s+twin)\b/i,
+    regex: /\b(act\s+as\s+dan|dan\s+mode|do\s+anything\s+now|jailbreak\s+mode|developer\s+mode\s+enabled|unfiltered\s+assistant|evil\s+twin)\b/i,
     reason: 'Attempted to force model into an adversarial unaligned persona',
   },
   {
@@ -85,7 +85,7 @@ const PII_PATTERNS: Array<{ type: string; placeholder: string; regex: RegExp }> 
   {
     type: 'API_SECRET_KEY',
     placeholder: '[REDACTED_API_KEY]',
-    regex: /\b(?:sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{20,}|Bearer\s+[a-zA-Z0-9\-._~+/]+=*)\b/g,
+    regex: /\b(?:sk-[a-zA-Z0-9\-_]{20,}|ghp_[a-zA-Z0-9]{20,}|Bearer\s+[a-zA-Z0-9\-._~+/]+=*)\b/g,
   },
   {
     type: 'IP_ADDRESS',

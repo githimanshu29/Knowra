@@ -43,6 +43,8 @@ async function runChatApiVerification(): Promise<void> {
       tenantId: tenant.id,
       email: user.email,
       roles: ['admin', 'super_admin'],
+      roleIds: ['11111111-1111-4111-8111-111111111111'],
+      isSuperAdmin: true,
     });
 
     console.log(`Tenant:   ${tenant.name} (${tenant.id})`);

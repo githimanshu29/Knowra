@@ -3,6 +3,8 @@ import { BaseMessage } from '@langchain/core/messages';
 // Reranked candidate and hybrid search result interfaces
 import { HybridSearchResult } from '../services/retrieval/hybridSearch.js';
 import { RerankedCandidate } from '../services/retrieval/reranker.js';
+// PII entity match interface from security service
+import { PiiEntityMatch } from '../services/security/guardrails.js';
 
 // TypeScript Concept: Interface
 // Structure of an individual citation pointing to an exact evidence chunk
@@ -11,11 +13,11 @@ export interface CitationItem {
   documentId: string;
   headingPath: string | null;
   snippet: string;
+  claim?: string;
+  isEntailed?: boolean;
 }
-// PII entity match interface from security service
-import { PiiEntityMatch } from '../services/security/guardrails.js';
 
-// TypeScript Concept: Annotation / State Definition
+// TypeScript Concept: State Definition
 // Complete state maintained throughout the LangGraph agent execution lifecycle
 export interface KnowraAgentState {
   messages: BaseMessage[];
@@ -33,8 +35,10 @@ export interface KnowraAgentState {
   assembledContext: string;
   generatedAnswer: string;
   citations: CitationItem[];
+  groundingScore?: number;
   abstentionFlag: boolean;
   abstentionReason?: string;
+  streamTokenCallback?: (token: string) => void;
   executionMetrics: {
     retrievalDurationMs?: number;
     rerankerDurationMs?: number;
@@ -54,6 +58,7 @@ export function createInitialState(
     roleIds?: string[];
     isSuperAdmin?: boolean;
     messages?: BaseMessage[];
+    streamTokenCallback?: (token: string) => void;
   } = {}
 ): KnowraAgentState {
   return {
@@ -71,7 +76,9 @@ export function createInitialState(
     assembledContext: '',
     generatedAnswer: '',
     citations: [],
+    groundingScore: 1.0,
     abstentionFlag: false,
+    streamTokenCallback: options.streamTokenCallback,
     executionMetrics: {},
   };
 }

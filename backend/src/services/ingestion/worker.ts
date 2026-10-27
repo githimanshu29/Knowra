@@ -12,6 +12,8 @@ import { parseDocument } from './parsers.js';
 import { chunkDocument } from './chunker.js';
 // Vector embedder
 import { batchGenerateEmbeddings } from './embedder.js';
+// Validated environment variables
+import { env } from '../../config/env.js';
 
 // Batch size for inserting chunk records into PostgreSQL
 const CHUNK_INSERT_BATCH_SIZE = 25;
@@ -136,6 +138,8 @@ export async function processIngestionJob(jobId: string): Promise<IngestionJobRe
           headingPath: chunk.headingPath,
           chunkStrategy: chunk.chunkStrategy,
           embedding: embeddings[globalIdx],
+          embeddingModel: env.EMBEDDING_MODEL,
+          embeddingDimension: env.EMBEDDING_DIMENSION,
           searchVector: sql`to_tsvector('english', ${chunk.content})`,
         };
       });
@@ -215,4 +219,36 @@ export function triggerIngestionWorker(jobId: string): void {
   processIngestionJob(jobId).catch((err) => {
     console.error(`Background ingestion job ${jobId} failed unhandled:`, err);
   });
+}
+
+// Recovers any ingestion jobs left in PROCESSING status across server restarts
+// returns: Promise<number> count of recovered jobs
+export async function recoverStuckIngestionJobs(): Promise<number> {
+  const stuckJobs = await db.query.ingestionJobs.findMany({
+    where: eq(ingestionJobs.status, 'PROCESSING'),
+  });
+
+  if (stuckJobs.length === 0) return 0;
+
+  for (const job of stuckJobs) {
+    await db
+      .update(ingestionJobs)
+      .set({
+        status: 'FAILED',
+        errorMessage: 'Job interrupted by server restart',
+        updatedAt: new Date(),
+      })
+      .where(eq(ingestionJobs.id, job.id));
+
+    await db
+      .update(documents)
+      .set({
+        status: 'ERROR',
+        errorMessage: 'Ingestion interrupted by server restart',
+        updatedAt: new Date(),
+      })
+      .where(eq(documents.id, job.documentId));
+  }
+
+  return stuckJobs.length;
 }

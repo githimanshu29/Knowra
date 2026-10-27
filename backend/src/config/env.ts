@@ -1,87 +1,94 @@
-// Environment variables ko filesystem (.env) se process.env me load karne ke liye
+// Environment variables loader from filesystem
 import dotenv from 'dotenv';
-// Runtime schema definition aur environment variables validation ke liye
+// Zod runtime schema validation library
 import { z } from 'zod';
 
-// Load .env configuration immediately on module evaluation
+// Load dot env configuration immediately on module evaluation
 dotenv.config();
 
-/**
- * Enterprise Application Environment Schema.
- * Server start hote hi Zod sabhi keys ko validate karega.
- * Agar koi critical variable (jaise DATABASE_URL ya JWT_SECRET) missing ya invalid hua,
- * toh application boot time par hi crash ho jayegi (Fail-fast principle).
- */
-const envSchema = z.object({
-  // -------------------------------------------------------------------------
-  // 1. Server & Environment
-  // -------------------------------------------------------------------------
-  PORT: z.coerce.number().default(5000),
-  NODE_ENV: z.enum(['development', 'staging', 'production']).default('development'),
+// TypeScript Concept: Zod Runtime Schema Validation
+// Enforces strict typing and fail-fast crash semantics on application boot
+const envSchema = z
+  .object({
+    // Server and Environment
+    PORT: z.coerce.number().default(5000),
+    NODE_ENV: z.enum(['development', 'staging', 'production', 'test']).default('development'),
+    CORS_ORIGIN: z.string().default('http://localhost:3000,http://localhost:5173'),
 
-  // -------------------------------------------------------------------------
-  // 2. PostgreSQL Database Connection
-  // -------------------------------------------------------------------------
-  // Connection string format: postgresql://user:password@host:port/database_name
-  DATABASE_URL: z.string().url().default('postgresql://postgres:postgres@localhost:5432/enterprise_rag_db'),
+    // PostgreSQL Database Connection
+    DATABASE_URL: z.string().url().default('postgresql://postgres:postgres@localhost:5432/enterprise_rag_db'),
 
-  // -------------------------------------------------------------------------
-  // 3. JWT Authentication & Security
-  // -------------------------------------------------------------------------
-  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters long').default('CHANGE_THIS_IN_PRODUCTION_TO_A_SECURE_RANDOM_32_CHAR_SECRET_KEY'),
-  JWT_EXPIRES_IN: z.string().default('24h'),
+    // JWT Authentication and Security
+    JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters long').default('replace_with_a_super_secret_key_at_least_32_characters_long'),
+    JWT_EXPIRES_IN: z.string().default('24h'),
 
-  // -------------------------------------------------------------------------
-  // 4. Redis Cache Configuration
-  // -------------------------------------------------------------------------
-  REDIS_URL: z.string().url().default('redis://localhost:6379'),
-  REDIS_CACHE_TTL_SECONDS: z.coerce.number().default(3600), // 1 hour
+    // Redis Cache Configuration
+    REDIS_URL: z.string().url().default('redis://localhost:6379'),
+    REDIS_CACHE_TTL_SECONDS: z.coerce.number().default(3600),
 
-  // -------------------------------------------------------------------------
-  // 5. Vector Embeddings (pgvector)
-  // -------------------------------------------------------------------------
-  EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
-  EMBEDDING_DIMENSION: z.coerce.number().default(1536), // pgvector column dimension
+    // Vector Embeddings
+    EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
+    EMBEDDING_DIMENSION: z.coerce.number().default(1536),
 
-  // -------------------------------------------------------------------------
-  // 6. External Providers & Observability (LangSmith & OpenAI)
-  // -------------------------------------------------------------------------
-  OPENAI_API_KEY: z.string().optional(),
-  COHERE_API_KEY: z.string().optional(),
-  LANGCHAIN_TRACING_V2: z.coerce.boolean().default(false),
-  LANGCHAIN_ENDPOINT: z.string().url().default('https://api.smith.langchain.com'),
-  LANGCHAIN_API_KEY: z.string().optional(),
-  LANGCHAIN_PROJECT: z.string().default('enterprise-rag-intelligence'),
+    // External Providers and Observability
+    OPENAI_API_KEY: z.string().optional(),
+    COHERE_API_KEY: z.string().optional(),
+    LANGCHAIN_TRACING_V2: z.coerce.boolean().default(false),
+    LANGCHAIN_ENDPOINT: z.string().url().default('https://api.smith.langchain.com'),
+    LANGCHAIN_API_KEY: z.string().optional(),
+    LANGCHAIN_PROJECT: z.string().default('enterprise-rag-intelligence'),
 
-  // -------------------------------------------------------------------------
-  // 7. Hybrid Retrieval Tuning Parameters
-  // -------------------------------------------------------------------------
-  LEXICAL_CANDIDATE_K: z.coerce.number().default(20),  // tsvector full-text candidates
-  VECTOR_CANDIDATE_K: z.coerce.number().default(20),   // pgvector cosine similarity candidates
-  RRF_K_CONSTANT: z.coerce.number().default(60),       // Reciprocal Rank Fusion constant
-  RERANKER_TOP_K: z.coerce.number().default(5),        // Top candidates after reranking
-  FINAL_EVIDENCE_K: z.coerce.number().default(3),      // Grounded evidence in final LLM prompt
-  MAX_CONTEXT_TOKENS: z.coerce.number().default(4000), // Context compression token ceiling
-});
+    // Hybrid Retrieval Tuning Parameters
+    LEXICAL_CANDIDATE_K: z.coerce.number().default(20),
+    VECTOR_CANDIDATE_K: z.coerce.number().default(20),
+    RRF_K_CONSTANT: z.coerce.number().default(60),
+    RERANKER_TOP_K: z.coerce.number().default(5),
+    FINAL_EVIDENCE_K: z.coerce.number().default(3),
+    MAX_CONTEXT_TOKENS: z.coerce.number().default(4000),
+  })
+  .refine(
+    (data) => {
+      // Production security guard: reject placeholder secrets
+      if (data.NODE_ENV === 'production') {
+        const lowerSecret = data.JWT_SECRET.toLowerCase();
+        if (
+          lowerSecret.includes('replace_with') ||
+          lowerSecret.includes('change_this') ||
+          lowerSecret.includes('default')
+        ) {
+          return false;
+        }
+      }
+      return true;
+    },
+    {
+      message: 'JWT_SECRET must be replaced with a secure random key in production environments',
+      path: ['JWT_SECRET'],
+    }
+  )
+  .refine(
+    (data) => {
+      // Production security guard: reject localhost database url
+      if (data.NODE_ENV === 'production') {
+        if (data.DATABASE_URL.includes('localhost') || data.DATABASE_URL.includes('127.0.0.1')) {
+          return false;
+        }
+      }
+      return true;
+    },
+    {
+      message: 'DATABASE_URL cannot point to localhost in production environments',
+      path: ['DATABASE_URL'],
+    }
+  );
 
-/**
- * Validates process.env against envSchema.
- * 
- * @returns {z.infer<typeof envSchema>} Strictly typed, validated environment settings
- * @example
- * {
- *   PORT: 5000,
- *   NODE_ENV: 'development',
- *   DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/enterprise_rag_db',
- *   EMBEDDING_DIMENSION: 1536,
- *   ...
- * }
- */
+// Validates process.env against envSchema
+// returns: z.infer<typeof envSchema>
 function validateEnv(): z.infer<typeof envSchema> {
   const result = envSchema.safeParse(process.env);
 
   if (!result.success) {
-    console.error('❌ Invalid Environment Variables Configuration:');
+    console.error('Invalid Environment Variables Configuration:');
     console.error(JSON.stringify(result.error.format(), null, 2));
     process.exit(1);
   }
@@ -89,6 +96,6 @@ function validateEnv(): z.infer<typeof envSchema> {
   return result.data;
 }
 
-// Global immutable validated config object
+// Global immutable validated configuration object
 export const env: z.infer<typeof envSchema> = validateEnv();
 export type Env = z.infer<typeof envSchema>;
