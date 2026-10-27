@@ -103,6 +103,8 @@ export const ingestionJobs = pgTable('ingestion_jobs', {
     .notNull(),
   status: varchar('status', { length: 50 }).default('QUEUED').notNull(),
   progressPercent: integer('progress_percent').default(0).notNull(),
+  retryCount: integer('retry_count').default(0).notNull(),
+  maxRetries: integer('max_retries').default(3).notNull(),
   errorMessage: text('error_message'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

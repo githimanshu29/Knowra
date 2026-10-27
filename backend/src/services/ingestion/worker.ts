@@ -184,11 +184,56 @@ export async function processIngestionJob(jobId: string): Promise<IngestionJobRe
     const errorMsg = (error as Error).message;
     console.error(`Ingestion processing error for job ${jobId}:`, errorMsg);
 
+    const currentRetry = jobRecord.retryCount ?? 0;
+    const maxRetries = jobRecord.maxRetries ?? 3;
+
+    if (currentRetry < maxRetries) {
+      const nextRetry = currentRetry + 1;
+      // Exponential backoff delay calculation in milliseconds
+      const delayMs = Math.min(30000, Math.pow(2, nextRetry) * 1000);
+      console.warn(`Scheduling retry ${nextRetry}/${maxRetries} for job ${jobId} in ${delayMs}ms`);
+
+      await db
+        .update(ingestionJobs)
+        .set({
+          status: 'QUEUED',
+          retryCount: nextRetry,
+          errorMessage: `Attempt ${currentRetry + 1} failed: ${errorMsg}. Retrying...`,
+          updatedAt: new Date(),
+        })
+        .where(eq(ingestionJobs.id, jobId));
+
+      await db
+        .update(documents)
+        .set({
+          status: 'QUEUED',
+          errorMessage: `Ingestion retry ${nextRetry}/${maxRetries} queued`,
+          updatedAt: new Date(),
+        })
+        .where(eq(documents.id, jobRecord.documentId));
+
+      // Schedule delayed retry execution
+      setTimeout(() => {
+        processIngestionJob(jobId).catch((err) => {
+          console.error(`Retry execution for job ${jobId} failed:`, err);
+        });
+      }, delayMs);
+
+      return {
+        jobId,
+        documentId: jobRecord.documentId,
+        totalChunks: 0,
+        status: 'FAILED',
+        errorMessage: `Queued for retry ${nextRetry}/${maxRetries}: ${errorMsg}`,
+      };
+    }
+
+    // Exhausted maximum retries
     await db
       .update(ingestionJobs)
       .set({
         status: 'FAILED',
-        errorMessage: errorMsg,
+        errorMessage: `Exceeded max retries (${maxRetries}): ${errorMsg}`,
         updatedAt: new Date(),
       })
       .where(eq(ingestionJobs.id, jobId));
@@ -197,7 +242,7 @@ export async function processIngestionJob(jobId: string): Promise<IngestionJobRe
       .update(documents)
       .set({
         status: 'ERROR',
-        errorMessage: errorMsg,
+        errorMessage: `Exceeded max retries (${maxRetries}): ${errorMsg}`,
         updatedAt: new Date(),
       })
       .where(eq(documents.id, jobRecord.documentId));
@@ -222,8 +267,9 @@ export function triggerIngestionWorker(jobId: string): void {
 }
 
 // Recovers any ingestion jobs left in PROCESSING status across server restarts
-// returns: Promise<number> count of recovered jobs
+// returns: Promise<number> count of recovered or resumed jobs
 export async function recoverStuckIngestionJobs(): Promise<number> {
+  // stuckJobs is an Array of IngestionJob objects
   const stuckJobs = await db.query.ingestionJobs.findMany({
     where: eq(ingestionJobs.status, 'PROCESSING'),
   });
@@ -231,23 +277,53 @@ export async function recoverStuckIngestionJobs(): Promise<number> {
   if (stuckJobs.length === 0) return 0;
 
   for (const job of stuckJobs) {
-    await db
-      .update(ingestionJobs)
-      .set({
-        status: 'FAILED',
-        errorMessage: 'Job interrupted by server restart',
-        updatedAt: new Date(),
-      })
-      .where(eq(ingestionJobs.id, job.id));
+    const currentRetry = job.retryCount ?? 0;
+    const maxRetries = job.maxRetries ?? 3;
 
-    await db
-      .update(documents)
-      .set({
-        status: 'ERROR',
-        errorMessage: 'Ingestion interrupted by server restart',
-        updatedAt: new Date(),
-      })
-      .where(eq(documents.id, job.documentId));
+    if (currentRetry < maxRetries) {
+      const nextRetry = currentRetry + 1;
+      console.log(`Resuming interrupted job ${job.id} (attempt ${nextRetry}/${maxRetries})`);
+
+      await db
+        .update(ingestionJobs)
+        .set({
+          status: 'QUEUED',
+          retryCount: nextRetry,
+          errorMessage: 'Resumed after server restart',
+          updatedAt: new Date(),
+        })
+        .where(eq(ingestionJobs.id, job.id));
+
+      await db
+        .update(documents)
+        .set({
+          status: 'QUEUED',
+          errorMessage: 'Resumed after server restart',
+          updatedAt: new Date(),
+        })
+        .where(eq(documents.id, job.documentId));
+
+      // Trigger worker to resume processing
+      triggerIngestionWorker(job.id);
+    } else {
+      await db
+        .update(ingestionJobs)
+        .set({
+          status: 'FAILED',
+          errorMessage: 'Job interrupted by server restart and exceeded max retries',
+          updatedAt: new Date(),
+        })
+        .where(eq(ingestionJobs.id, job.id));
+
+      await db
+        .update(documents)
+        .set({
+          status: 'ERROR',
+          errorMessage: 'Ingestion interrupted by server restart and exceeded max retries',
+          updatedAt: new Date(),
+        })
+        .where(eq(documents.id, job.documentId));
+    }
   }
 
   return stuckJobs.length;

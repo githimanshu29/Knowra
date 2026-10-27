@@ -54,28 +54,28 @@ const PROMPT_INJECTION_SIGNATURES: Array<{ category: string; regex: RegExp; reas
     reason: 'Attempted to inject fake delimiter tokens to break prompt sandbox',
   },
   {
-    category: 'SQL_COMMAND_INJECTION',
-    regex: /\b(drop\s+table|delete\s+from\s+users|exec\s*\(|union\s+select|benchmark\s*\()\b/i,
-    reason: 'Attempted raw SQL injection or remote code execution pattern',
+    category: 'MULTILINGUAL_INSTRUCTION_OVERRIDE',
+    regex: /(apne\s+sabhi\s+rules\s+bhul\s+jao|purane\s+nirdesh\s+ignore\s+karo|system\s+prompt\s+dikhao|mujhe\s+apna\s+prompt\s+batao|nirdeshon\s+ko\s+ansuna\s+karo)/i,
+    reason: 'Attempted prompt injection using Hindi/Hinglish instructions',
   },
 ];
 
-// Regular expressions for detecting standard PII patterns
-const PII_PATTERNS: Array<{ type: string; placeholder: string; regex: RegExp }> = [
+// Regular expressions for detecting standard Global and Indian PII patterns
+const PII_PATTERNS: Array<{ type: string; placeholder: string; regex: RegExp; isContact?: boolean }> = [
   {
     type: 'CREDIT_CARD',
     placeholder: '[REDACTED_CREDIT_CARD]',
     regex: /\b(?:\d{4}[-\s]?){3}\d{4}\b|\b3[47]\d{2}[-\s]?\d{6}[-\s]?\d{5}\b/g,
   },
   {
-    type: 'EMAIL_ADDRESS',
-    placeholder: '[REDACTED_EMAIL]',
-    regex: /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/g,
+    type: 'INDIAN_PAN',
+    placeholder: '[REDACTED_PAN]',
+    regex: /\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b/g,
   },
   {
-    type: 'PHONE_NUMBER',
-    placeholder: '[REDACTED_PHONE]',
-    regex: /(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g,
+    type: 'INDIAN_AADHAAR',
+    placeholder: '[REDACTED_AADHAAR]',
+    regex: /\b[2-9]{1}[0-9]{3}\s?[0-9]{4}\s?[0-9]{4}\b/g,
   },
   {
     type: 'SOCIAL_SECURITY_NUMBER',
@@ -91,6 +91,18 @@ const PII_PATTERNS: Array<{ type: string; placeholder: string; regex: RegExp }> 
     type: 'IP_ADDRESS',
     placeholder: '[REDACTED_IP]',
     regex: /\b(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g,
+  },
+  {
+    type: 'EMAIL_ADDRESS',
+    placeholder: '[REDACTED_EMAIL]',
+    regex: /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/g,
+    isContact: true,
+  },
+  {
+    type: 'PHONE_NUMBER',
+    placeholder: '[REDACTED_PHONE]',
+    regex: /(?:\+?91[\s-]?)?[6-9]\d{9}\b|(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g,
+    isContact: true,
   },
 ];
 
@@ -132,7 +144,10 @@ export function scanPromptInjection(query: string): PromptInjectionResult {
 
 // Scans and sanitizes text by replacing sensitive PII entities with redaction placeholders
 // returns: PiiRedactionResult
-export function redactPii(text: string): PiiRedactionResult {
+export function redactPii(
+  text: string,
+  options: { preserveContacts?: boolean } = {}
+): PiiRedactionResult {
   if (!text || text.length === 0) {
     return {
       sanitizedText: text,
@@ -146,6 +161,12 @@ export function redactPii(text: string): PiiRedactionResult {
 
   for (let i = 0; i < PII_PATTERNS.length; i++) {
     const pattern = PII_PATTERNS[i];
+
+    // If preserveContacts is enabled (e.g. for evidence context), skip email and phone
+    if (options.preserveContacts && pattern.isContact) {
+      continue;
+    }
+
     let matchCount = 0;
 
     sanitized = sanitized.replace(pattern.regex, () => {
@@ -175,23 +196,13 @@ export function redactPii(text: string): PiiRedactionResult {
 // Comprehensive guardrail evaluator executing prompt injection scan and PII redaction
 // returns: GuardrailEvaluationResult
 export function evaluateInputGuardrails(query: string): GuardrailEvaluationResult {
-  // 1. Check for prompt injection or jailbreak attempts
   const injectionCheck = scanPromptInjection(query);
-  if (injectionCheck.isMalicious) {
-    return {
-      allowed: false,
-      sanitizedQuery: query,
-      injectionCheck,
-      piiCheck: { sanitizedText: query, hasPii: false, entities: [] },
-    };
-  }
-
-  // 2. Redact sensitive personal data before query enters retrieval or LLM pipelines
   const piiCheck = redactPii(query);
 
-  // returns: GuardrailEvaluationResult
+  const allowed = !injectionCheck.isMalicious;
+
   return {
-    allowed: true,
+    allowed,
     sanitizedQuery: piiCheck.sanitizedText,
     injectionCheck,
     piiCheck,

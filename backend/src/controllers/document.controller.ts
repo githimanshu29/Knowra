@@ -7,7 +7,9 @@ import fs from 'fs/promises';
 // Database client instance
 import { db } from '../db/index.js';
 // Drizzle schemas
-import { documentPermissions, documentVersions, documents, ingestionJobs } from '../db/schema/index.js';
+import { documentPermissions, documentVersions, documents, ingestionJobs, roles, users } from '../db/schema/index.js';
+// Zod document input validation schemas
+import { addDocumentPermissionSchema, updateDocumentAccessSchema } from '../schemas/document.schema.js';
 // File storage helpers
 import { computeFileHash, saveFile } from '../services/storage.service.js';
 // Background ingestion worker trigger
@@ -263,12 +265,14 @@ export async function updateDocumentAccess(req: Request, res: Response, next: Ne
     const userId = req.user!.userId;
     const isSuperAdmin = Boolean(req.user!.isSuperAdmin);
     const documentId = req.params.id as string;
-    const { isPublicWithinTenant } = req.body;
 
-    if (typeof isPublicWithinTenant !== 'boolean') {
-      res.status(400).json({ error: 'Bad Request', message: 'isPublicWithinTenant must be a boolean' });
+    const parseResult = updateDocumentAccessSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      res.status(400).json({ error: 'Validation Error', details: parseResult.error.flatten().fieldErrors });
       return;
     }
+
+    const { isPublicWithinTenant } = parseResult.data;
 
     const doc = await db.query.documents.findFirst({
       where: and(eq(documents.id, documentId), eq(documents.tenantId, tenantId)),
@@ -305,11 +309,35 @@ export async function addDocumentPermission(req: Request, res: Response, next: N
     const currentUserId = req.user!.userId;
     const isSuperAdmin = Boolean(req.user!.isSuperAdmin);
     const documentId = req.params.id as string;
-    const { roleId, userId, permissionLevel = 'read' } = req.body;
 
-    if (!roleId && !userId) {
-      res.status(400).json({ error: 'Bad Request', message: 'Either roleId or userId must be specified' });
+    const parseResult = addDocumentPermissionSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      res.status(400).json({ error: 'Validation Error', details: parseResult.error.flatten().fieldErrors });
       return;
+    }
+
+    const { roleId, userId, permissionLevel } = parseResult.data;
+
+    // Cross-tenant permission poisoning defense: verify target role belongs to same tenant
+    if (roleId) {
+      const roleRecord = await db.query.roles.findFirst({
+        where: and(eq(roles.id, roleId), eq(roles.tenantId, tenantId)),
+      });
+      if (!roleRecord) {
+        res.status(400).json({ error: 'Bad Request', message: 'Target role does not belong to your tenant' });
+        return;
+      }
+    }
+
+    // Cross-tenant permission poisoning defense: verify target user belongs to same tenant
+    if (userId) {
+      const userRecord = await db.query.users.findFirst({
+        where: and(eq(users.id, userId), eq(users.tenantId, tenantId)),
+      });
+      if (!userRecord) {
+        res.status(400).json({ error: 'Bad Request', message: 'Target user does not belong to your tenant' });
+        return;
+      }
     }
 
     const doc = await db.query.documents.findFirst({

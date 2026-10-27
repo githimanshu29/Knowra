@@ -1,28 +1,31 @@
 // Citation item interface and agent state type
 import { CitationItem, KnowraAgentState } from '../state.js';
 
-// Verifies whether numbers and key terms in a claim statement exist in the candidate chunk
+// Verifies whether numbers and key terms in a claim statement exist as exact tokens in candidate chunk
 // returns: boolean
-function verifyClaimEntailment(claim: string, chunkContent: string): boolean {
+export function verifyClaimGroundedness(claim: string, chunkContent: string): boolean {
   const cleanChunk = chunkContent.toLowerCase();
   const cleanClaim = claim.toLowerCase();
 
-  // 1. Numerical Entailment: Every number mentioned in the claim must exist in the chunk
-  // Strip [evidence N] citation tags first so citation indices are not treated as factual claims
+  // Strip [evidence N] citation tags so citation indices are not treated as factual claims
   const claimTextWithoutTags = cleanClaim.replace(/\[evidence\s+\d+[^\]]*\]/gi, '');
   const numberRegex = /\b\d+(?:[.,]\d+)?%?\b/g;
-  const claimNumbers = claimTextWithoutTags.match(numberRegex) || [];
+  const claimNumbers = (claimTextWithoutTags.match(numberRegex) || []).map((n) => n.trim());
 
-  for (const num of claimNumbers) {
-    if (!cleanChunk.includes(num)) {
-      // Numerical hallucination detected
-      return false;
+  // 1. Strict Numerical Verification: Token-level matching prevents '5' matching inside '15' or '50'
+  if (claimNumbers.length > 0) {
+    const chunkNumbers = new Set((cleanChunk.match(numberRegex) || []).map((n) => n.trim()));
+
+    for (const num of claimNumbers) {
+      if (!chunkNumbers.has(num)) {
+        // Numerical hallucination or mismatch detected
+        return false;
+      }
     }
   }
 
-  // 2. Lexical Entailment: Key content words in the claim must have significant presence in the chunk
-  const claimWords = cleanClaim
-    .replace(/\[evidence\s+\d+[^\]]*\]/gi, '')
+  // 2. Lexical Token Alignment: Key content words in claim must exist in source chunk tokens
+  const claimWords = claimTextWithoutTags
     .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
     .filter((w) => w.length > 3);
@@ -31,19 +34,27 @@ function verifyClaimEntailment(claim: string, chunkContent: string): boolean {
     return true;
   }
 
+  // Build word token set from chunk for exact word boundary verification
+  const chunkWordTokens = new Set(
+    cleanChunk
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 2)
+  );
+
   let matchingWordsCount = 0;
   for (const word of claimWords) {
-    if (cleanChunk.includes(word)) {
+    if (chunkWordTokens.has(word)) {
       matchingWordsCount++;
     }
   }
 
   const lexicalOverlapRatio = matchingWordsCount / claimWords.length;
-  // Entailed if at least 35 percent of significant content words are attested in source chunk
+  // Grounded if at least 35 percent of significant content words are attested in source chunk
   return lexicalOverlapRatio >= 0.35;
 }
 
-// Node 5: Verifies claim entailment against evidence chunks and computes grounding score
+// Node 5: Verifies claim groundedness against evidence chunks and computes grounding score
 // returns: Promise<Partial<KnowraAgentState>>
 export async function citationVerificationNode(state: KnowraAgentState): Promise<Partial<KnowraAgentState>> {
   const startTime = Date.now();
@@ -108,9 +119,9 @@ export async function citationVerificationNode(state: KnowraAgentState): Promise
 
         if (chunkIndex >= 0 && chunkIndex < evidenceList.length) {
           const chunk = evidenceList[chunkIndex];
-          const isEntailed = verifyClaimEntailment(sentence, chunk.content);
+          const isGrounded = verifyClaimGroundedness(sentence, chunk.content);
 
-          if (isEntailed) {
+          if (isGrounded) {
             entailedClaimsCount++;
             // Deduplicate citations by documentId and citationTag
             const alreadyExists = verifiedCitations.some(
@@ -133,7 +144,7 @@ export async function citationVerificationNode(state: KnowraAgentState): Promise
     }
   }
 
-  // Calculate grounding score: ratio of entailed claims to total cited claims
+  // Calculate grounding score: ratio of grounded claims to total cited claims
   let groundingScore = 1.0;
   if (totalCitedClaims > 0) {
     groundingScore = Number((entailedClaimsCount / totalCitedClaims).toFixed(2));

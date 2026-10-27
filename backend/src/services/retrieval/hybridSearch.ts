@@ -75,7 +75,7 @@ interface RawCandidateRow {
 
 // Executes dense vector search using pgvector cosine distance operator
 // returns: Promise<Array<RawCandidateRow & { vectorScore: number }>>
-async function executeVectorBranch(
+export async function executeVectorBranch(
   queryVector: number[],
   tenantId: string,
   candidateK: number,
@@ -146,7 +146,7 @@ async function executeVectorBranch(
 
 // Executes sparse lexical full text search using tsvector GIN index
 // returns: Promise<Array<RawCandidateRow & { lexicalScore: number }>>
-async function executeLexicalBranch(
+export async function executeLexicalBranch(
   cleanQuery: string,
   tenantId: string,
   candidateK: number,

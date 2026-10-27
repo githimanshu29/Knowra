@@ -1,7 +1,7 @@
 // Express request and response types
 import { NextFunction, Request, Response } from 'express';
 // Drizzle query operators
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 // LangChain message types
 import { AIMessage, BaseMessage, HumanMessage } from '@langchain/core/messages';
 // Database client instance
@@ -52,11 +52,15 @@ export async function chatQueryHandler(req: Request, res: Response): Promise<voi
   let conversationHistory: BaseMessage[] = [];
   if (conversationId) {
     const existingConversation = await db.query.conversations.findFirst({
-      where: and(eq(conversations.id, conversationId), eq(conversations.tenantId, tenantId)),
+      where: and(
+        eq(conversations.id, conversationId),
+        eq(conversations.tenantId, tenantId),
+        isSuperAdmin ? sql`1=1` : eq(conversations.userId, userId)
+      ),
     });
 
     if (!existingConversation) {
-      res.status(404).json({ error: 'Not Found', message: 'Conversation not found' });
+      res.status(404).json({ error: 'Not Found', message: 'Conversation not found or access denied' });
       return;
     }
 
@@ -116,10 +120,13 @@ export async function chatQueryHandler(req: Request, res: Response): Promise<voi
         message: `Retrieved ${finalState.retrievedCandidates.length} candidate chunks, selected ${finalState.rerankedEvidence.length} evidence sources.`,
       });
 
-      // Emit verified citations and grounding evaluation metadata
+      // Emit verified citations and grounding evaluation metadata with warning flag if ungrounded
+      const isGrounded = (finalState.groundingScore ?? 1.0) >= 0.6;
       sendSseEvent(res, 'citations', {
         citations: finalState.citations,
         groundingScore: finalState.groundingScore,
+        isGrounded,
+        groundingWarning: isGrounded ? null : 'Generated claims could not be fully substantiated by source documents',
         abstentionFlag: finalState.abstentionFlag,
         isSecurityFlagged: finalState.isSecurityFlagged || false,
         securityViolationReason: finalState.securityViolationReason,
@@ -152,8 +159,10 @@ export async function chatQueryHandler(req: Request, res: Response): Promise<voi
       res.end();
       return;
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : 'Internal streaming failure';
-      sendSseEvent(res, 'error', { error: errorMessage });
+      console.error('Chat streaming execution internal error:', err);
+      sendSseEvent(res, 'error', {
+        error: 'The knowledge intelligence streaming service encountered an unexpected error. Please try again.',
+      });
       res.end();
       return;
     }
@@ -198,10 +207,10 @@ export async function chatQueryHandler(req: Request, res: Response): Promise<voi
       executionMetrics: finalState.executionMetrics,
     });
   } catch (err: unknown) {
-    const errorMessage = err instanceof Error ? err.message : 'Internal query processing failure';
+    console.error('Chat query execution internal error:', err);
     res.status(500).json({
       error: 'Query Execution Failed',
-      message: errorMessage,
+      message: 'The knowledge intelligence service encountered an unexpected error. Please try again.',
     });
   }
 }

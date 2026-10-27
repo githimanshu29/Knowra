@@ -69,8 +69,8 @@ export async function generationNode(state: KnowraAgentState): Promise<Partial<K
     throw new Error('LLM Generation Service is currently unavailable. Vector retrieval succeeded but OPENAI_API_KEY is not configured for answer synthesis.');
   }
 
-  // Sanitize evidence context to ensure no PII is transmitted to external model
-  const sanitizedEvidence = redactPii(state.assembledContext).sanitizedText;
+  // Sanitize evidence context to ensure credentials and IDs are redacted while preserving company contact info
+  const sanitizedEvidence = redactPii(state.assembledContext, { preserveContacts: true }).sanitizedText;
 
   // Build message sequence preserving previous conversation history
   const chatMessages: OpenAI.ChatCompletionMessageParam[] = [

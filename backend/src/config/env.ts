@@ -48,8 +48,8 @@ const envSchema = z
   })
   .refine(
     (data) => {
-      // Production security guard: reject placeholder secrets
-      if (data.NODE_ENV === 'production') {
+      // Security guard: reject placeholder secrets in production and staging
+      if (data.NODE_ENV === 'production' || data.NODE_ENV === 'staging') {
         const lowerSecret = data.JWT_SECRET.toLowerCase();
         if (
           lowerSecret.includes('replace_with') ||
@@ -62,7 +62,7 @@ const envSchema = z
       return true;
     },
     {
-      message: 'JWT_SECRET must be replaced with a secure random key in production environments',
+      message: 'JWT_SECRET must be replaced with a secure random key in production and staging environments',
       path: ['JWT_SECRET'],
     }
   )

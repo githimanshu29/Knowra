@@ -54,6 +54,17 @@ async function migrateSchema(): Promise<void> {
     );
   `);
 
+  // Add retry columns to ingestion_jobs table
+  await db.execute(sql`
+    ALTER TABLE ingestion_jobs 
+    ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0;
+  `);
+
+  await db.execute(sql`
+    ALTER TABLE ingestion_jobs 
+    ADD COLUMN IF NOT EXISTS max_retries INTEGER NOT NULL DEFAULT 3;
+  `);
+
   console.log('Database schema successfully synchronized with pgvector HNSW index!');
   await closeDatabaseConnection();
 }

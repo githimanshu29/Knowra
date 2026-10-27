@@ -27,6 +27,9 @@ import { recoverStuckIngestionJobs } from './services/ingestion/worker.js';
 
 export const app = express();
 
+// Trust reverse proxy headers for rate limiting and IP resolution
+app.set('trust proxy', 1);
+
 // Security HTTP headers
 app.use(helmet());
 
