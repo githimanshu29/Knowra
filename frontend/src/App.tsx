@@ -1,6 +1,6 @@
 // React root application component
 import React from 'react';
-import { Activity, Database, ShieldCheck } from 'lucide-react';
+import { Activity, ShieldCheck } from 'lucide-react';
 // Redux typed selector hook
 import { useAppSelector } from './store/index.js';
 // Components
@@ -8,6 +8,8 @@ import { CommandNavbar } from './components/CommandNavbar.js';
 import { AuthModal } from './components/AuthModal.js';
 import { NeuralChatView } from './components/NeuralChatView.js';
 import { EvidenceDrawer } from './components/EvidenceDrawer.js';
+import { KnowledgeVaultView } from './components/KnowledgeVaultView.js';
+import { PermissionsModal } from './components/PermissionsModal.js';
 
 // Root application layout displaying executive command HUD and active studio view
 // returns: React.JSX.Element
@@ -29,9 +31,10 @@ export const App: React.FC = () => {
 
       {/* Main Studio View Canvas */}
       <main style={{ flex: 1, padding: '0 24px 32px', position: 'relative', zIndex: 10 }}>
-        {activeView === 'intelligence' ? (
-          <NeuralChatView />
-        ) : (
+        {activeView === 'intelligence' && <NeuralChatView />}
+        {activeView === 'vault' && <KnowledgeVaultView />}
+
+        {activeView !== 'intelligence' && activeView !== 'vault' && (
           <div className="glass-panel" style={{
             minHeight: 'calc(100vh - 120px)',
             padding: '32px',
@@ -42,31 +45,6 @@ export const App: React.FC = () => {
             textAlign: 'center',
             border: '1px solid rgba(255, 255, 255, 0.08)',
           }}>
-            {activeView === 'vault' && (
-              <div>
-                <div style={{
-                  width: '64px',
-                  height: '64px',
-                  borderRadius: '20px',
-                  background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(138, 43, 226, 0.2))',
-                  border: '1px solid rgba(168, 85, 247, 0.4)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginBottom: '16px',
-                  boxShadow: '0 0 30px rgba(168, 85, 247, 0.25)',
-                }}>
-                  <Database size={32} color="#c084fc" />
-                </div>
-                <h1 style={{ fontSize: '2rem', marginBottom: '8px' }}>
-                  Knowledge Ingestion Vault
-                </h1>
-                <p style={{ color: 'var(--text-secondary)', maxWidth: '520px', fontSize: '0.95rem' }}>
-                  Hierarchical semantic chunker (800t parent / 200t child), heading breadcrumbs, and document-level RBAC authorization.
-                </p>
-              </div>
-            )}
-
             {activeView === 'security' && (
               <div>
                 <div style={{
@@ -123,6 +101,7 @@ export const App: React.FC = () => {
       {/* Modal Dialogs and Slide-Over Drawers */}
       <AuthModal />
       <EvidenceDrawer />
+      <PermissionsModal />
     </div>
   );
 };
