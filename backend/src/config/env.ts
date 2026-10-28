@@ -32,6 +32,9 @@ const envSchema = z
 
     // External Providers and Observability
     OPENAI_API_KEY: z.string().optional(),
+    GEMINI_API_KEY: z.string().optional(),
+    GEMINI_MODEL: z.string().default('gemini-2.0-flash'),
+    LLM_PROVIDER: z.enum(['gemini', 'openai']).default('gemini'),
     COHERE_API_KEY: z.string().optional(),
     LANGCHAIN_TRACING_V2: z.coerce.boolean().default(false),
     LANGCHAIN_ENDPOINT: z.string().url().default('https://api.smith.langchain.com'),

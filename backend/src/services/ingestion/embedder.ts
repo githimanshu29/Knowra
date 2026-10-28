@@ -3,18 +3,37 @@ import OpenAI from 'openai';
 // Validated environment variables
 import { env } from '../../config/env.js';
 
-// TypeScript Concept: Singleton Client Instance
-// Maintains a single authenticated OpenAI instance across the entire application lifecycle
-let openaiClient: OpenAI | null = null;
+// Structure describing resolved embedding provider configuration
+interface EmbeddingConfig {
+  client: OpenAI;
+  model: string;
+  isGemini: boolean;
+}
 
-// Initializes or returns the shared OpenAI client instance
-// returns: OpenAI | null
-function getOpenAIClient(): OpenAI | null {
-  if (openaiClient) return openaiClient;
+// Client instance factory resolving Gemini or OpenAI embedding configuration
+// returns: EmbeddingConfig | null
+function getEmbeddingConfig(): EmbeddingConfig | null {
+  const useGemini = env.LLM_PROVIDER === 'gemini' || (!env.OPENAI_API_KEY && Boolean(env.GEMINI_API_KEY));
 
+  // 1. Google Gemini embedding via OpenAI-compatible endpoint
+  if (useGemini && env.GEMINI_API_KEY && env.GEMINI_API_KEY.trim().length > 0) {
+    return {
+      client: new OpenAI({
+        apiKey: env.GEMINI_API_KEY.trim(),
+        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+      }),
+      model: 'text-embedding-004',
+      isGemini: true,
+    };
+  }
+
+  // 2. OpenAI embedding provider
   if (env.OPENAI_API_KEY && env.OPENAI_API_KEY.trim().length > 0 && !env.OPENAI_API_KEY.includes('YOUR_OPENAI_API_KEY')) {
-    openaiClient = new OpenAI({ apiKey: env.OPENAI_API_KEY });
-    return openaiClient;
+    return {
+      client: new OpenAI({ apiKey: env.OPENAI_API_KEY.trim() }),
+      model: env.EMBEDDING_MODEL || 'text-embedding-3-small',
+      isGemini: false,
+    };
   }
 
   return null;
@@ -40,6 +59,24 @@ export function normalizeVector(vector: number[]): number[] {
   return normalized;
 }
 
+// Adapts vector dimension to target pgvector column dimension (1536) preserving unit cosine norm
+// returns: number[]
+export function adaptVectorDimension(vector: number[], targetDim: number = 1536): number[] {
+  if (vector.length === targetDim) {
+    return normalizeVector(vector);
+  }
+
+  if (vector.length < targetDim) {
+    const padded = new Array(targetDim).fill(0);
+    for (let i = 0; i < vector.length; i++) {
+      padded[i] = vector[i];
+    }
+    return normalizeVector(padded);
+  }
+
+  return normalizeVector(vector.slice(0, targetDim));
+}
+
 // Test utility: Generates a deterministic normalized pseudo-embedding explicitly for offline unit tests
 // returns: number[] 1536-dimensional unit float vector
 export function generateTestMockEmbedding(text: string, dimensions: number = 1536): number[] {
@@ -59,25 +96,25 @@ export function generateTestMockEmbedding(text: string, dimensions: number = 153
   return normalizeVector(vector);
 }
 
-// Generates a single vector embedding for a given text string using OpenAI API
+// Generates a single vector embedding for a given text string
 // returns: Promise<number[]> 1536-dimensional float vector
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const client = getOpenAIClient();
+  const config = getEmbeddingConfig();
 
-  if (!client) {
-    throw new Error('Vector embedding generation failed: OPENAI_API_KEY is not configured');
+  if (!config) {
+    throw new Error('Vector embedding generation failed: Neither GEMINI_API_KEY nor OPENAI_API_KEY is configured in backend/.env');
   }
 
   try {
-    const response = await client.embeddings.create({
-      model: env.EMBEDDING_MODEL,
+    const response = await config.client.embeddings.create({
+      model: config.model,
       input: text.replace(/\n/g, ' '),
     });
 
     const rawVector = response.data[0].embedding;
-    return normalizeVector(rawVector);
+    return adaptVectorDimension(rawVector, 1536);
   } catch (error) {
-    throw new Error(`OpenAI embedding request failed: ${(error as Error).message}`);
+    throw new Error(`Embedding request failed (${config.model}): ${(error as Error).message}`);
   }
 }
 
@@ -85,35 +122,36 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 // returns: Promise<number[][]> Array of 1536-dimensional float vectors
 export async function batchGenerateEmbeddings(
   texts: string[],
-  batchSize: number = 64
+  batchSize: number = 32
 ): Promise<number[][]> {
   if (texts.length === 0) return [];
 
-  const client = getOpenAIClient();
+  const config = getEmbeddingConfig();
 
-  if (!client) {
-    throw new Error('Batch vector embedding generation failed: OPENAI_API_KEY is not configured');
+  if (!config) {
+    throw new Error('Batch vector embedding generation failed: Neither GEMINI_API_KEY nor OPENAI_API_KEY is configured in backend/.env');
   }
 
   const allEmbeddings: number[][] = [];
+  const effectiveBatchSize = config.isGemini ? Math.min(batchSize, 16) : batchSize;
 
   // Process texts in sequential batches
-  for (let i = 0; i < texts.length; i += batchSize) {
-    const batchTexts = texts.slice(i, i + batchSize).map((t) => t.replace(/\n/g, ' '));
+  for (let i = 0; i < texts.length; i += effectiveBatchSize) {
+    const batchTexts = texts.slice(i, i + effectiveBatchSize).map((t) => t.replace(/\n/g, ' '));
 
     try {
-      const response = await client.embeddings.create({
-        model: env.EMBEDDING_MODEL,
+      const response = await config.client.embeddings.create({
+        model: config.model,
         input: batchTexts,
       });
 
       // Sort results by index to preserve input order
       const sortedItems = response.data.sort((a, b) => a.index - b.index);
       for (const item of sortedItems) {
-        allEmbeddings.push(normalizeVector(item.embedding));
+        allEmbeddings.push(adaptVectorDimension(item.embedding, 1536));
       }
     } catch (error) {
-      throw new Error(`Batch embedding request failed on slice ${i} to ${i + batchSize}: ${(error as Error).message}`);
+      throw new Error(`Batch embedding request failed on slice ${i} to ${i + effectiveBatchSize}: ${(error as Error).message}`);
     }
   }
 

@@ -7,10 +7,32 @@ import { env } from '../../config/env.js';
 // PII redaction service for sanitizing evidence contexts
 import { redactPii } from '../../services/security/guardrails.js';
 
-// OpenAI client instance initialized conditionally
-const openaiClient = env.OPENAI_API_KEY && env.OPENAI_API_KEY.trim().length > 0 && !env.OPENAI_API_KEY.includes('YOUR_OPENAI_API_KEY')
-  ? new OpenAI({ apiKey: env.OPENAI_API_KEY })
-  : null;
+// Client instance factory resolving Gemini or OpenAI based on env configuration
+// returns: { client: OpenAI; model: string } | null
+function getLlmConfig(): { client: OpenAI; model: string } | null {
+  const useGemini = env.LLM_PROVIDER === 'gemini' || (!env.OPENAI_API_KEY && Boolean(env.GEMINI_API_KEY));
+
+  // 1. Google Gemini via OpenAI-compatible REST API
+  if (useGemini && env.GEMINI_API_KEY && env.GEMINI_API_KEY.trim().length > 0) {
+    return {
+      client: new OpenAI({
+        apiKey: env.GEMINI_API_KEY.trim(),
+        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+      }),
+      model: env.GEMINI_MODEL || 'gemini-2.0-flash',
+    };
+  }
+
+  // 2. OpenAI provider fallback
+  if (env.OPENAI_API_KEY && env.OPENAI_API_KEY.trim().length > 0 && !env.OPENAI_API_KEY.includes('YOUR_OPENAI_API_KEY')) {
+    return {
+      client: new OpenAI({ apiKey: env.OPENAI_API_KEY.trim() }),
+      model: 'gpt-4o-mini',
+    };
+  }
+
+  return null;
+}
 
 // System instruction prompt enforcing strict citation and anti-hallucination guardrails
 const SYSTEM_PROMPT = `You are Knowra, an Enterprise Knowledge Intelligence Assistant.
@@ -65,8 +87,9 @@ export async function generationNode(state: KnowraAgentState): Promise<Partial<K
     };
   }
 
-  if (!openaiClient) {
-    throw new Error('LLM Generation Service is currently unavailable. Vector retrieval succeeded but OPENAI_API_KEY is not configured for answer synthesis.');
+  const llmConfig = getLlmConfig();
+  if (!llmConfig) {
+    throw new Error('LLM Generation Service is currently unavailable. Vector retrieval succeeded but neither GEMINI_API_KEY nor OPENAI_API_KEY is configured in backend/.env.');
   }
 
   // Sanitize evidence context to ensure credentials and IDs are redacted while preserving company contact info
@@ -96,10 +119,12 @@ export async function generationNode(state: KnowraAgentState): Promise<Partial<K
   let finalAnswer = '';
 
   try {
+    const { client, model } = llmConfig;
+
     if (state.streamTokenCallback) {
-      // True token-by-token streaming directly from OpenAI API
-      const stream = await openaiClient.chat.completions.create({
-        model: 'gpt-4o-mini',
+      // True token-by-token streaming directly from LLM API
+      const stream = await client.chat.completions.create({
+        model,
         temperature: 0,
         stream: true,
         messages: chatMessages,
@@ -114,8 +139,8 @@ export async function generationNode(state: KnowraAgentState): Promise<Partial<K
       }
     } else {
       // Standard non-streaming completion
-      const completion = await openaiClient.chat.completions.create({
-        model: 'gpt-4o-mini',
+      const completion = await client.chat.completions.create({
+        model,
         temperature: 0,
         messages: chatMessages,
       });
