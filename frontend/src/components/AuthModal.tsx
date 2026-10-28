@@ -50,7 +50,8 @@ export const AuthModal: React.FC = () => {
       dispatch(setCredentials({ token: res.token, user: res.user, tenantSlug: slug }));
       dispatch(closeAuthModal());
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      const errData = (err as { response?: { data?: { message?: string; error?: string } } })?.response?.data;
+      const msg = errData?.message || errData?.error;
       setErrorMessage(msg || 'Authentication failed. Please verify credentials.');
     } finally {
       setIsLoading(false);
@@ -64,22 +65,22 @@ export const AuthModal: React.FC = () => {
     setErrorMessage(null);
 
     try {
-      await knowraApi.registerTenant({
-        name: orgName,
-        slug,
+      const res = await knowraApi.registerTenant({
+        tenantName: orgName,
+        tenantSlug: slug,
         adminEmail: email,
         adminPassword: password,
         adminFullName: fullName,
       });
 
-      setSuccessMessage('Organization registered! Logging you in...');
-      setTimeout(async () => {
-        const res = await knowraApi.login(slug, email, password);
-        dispatch(setCredentials({ token: res.token, user: res.user, tenantSlug: slug }));
+      setSuccessMessage('Organization workspace created! Connecting...');
+      dispatch(setCredentials({ token: res.token, user: res.user, tenantSlug: slug }));
+      setTimeout(() => {
         dispatch(closeAuthModal());
-      }, 1000);
+      }, 700);
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      const errData = (err as { response?: { data?: { message?: string; error?: string } } })?.response?.data;
+      const msg = errData?.message || errData?.error;
       setErrorMessage(msg || 'Registration failed. Check if slug or email exists.');
     } finally {
       setIsLoading(false);
@@ -123,7 +124,6 @@ export const AuthModal: React.FC = () => {
         padding: '32px',
         position: 'relative',
       }}>
-        {/* Close Button */}
         <button
           onClick={() => dispatch(closeAuthModal())}
           className="btn-ghost"
@@ -138,7 +138,6 @@ export const AuthModal: React.FC = () => {
           <X size={18} />
         </button>
 
-        {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
           <div style={{
             width: '48px',
@@ -163,7 +162,6 @@ export const AuthModal: React.FC = () => {
           </p>
         </div>
 
-        {/* Tab Switcher */}
         <div style={{
           display: 'flex',
           background: 'rgba(255, 255, 255, 0.04)',
@@ -207,7 +205,6 @@ export const AuthModal: React.FC = () => {
           </button>
         </div>
 
-        {/* Error Alert */}
         {errorMessage && (
           <div style={{
             display: 'flex',
@@ -226,7 +223,6 @@ export const AuthModal: React.FC = () => {
           </div>
         )}
 
-        {/* Success Alert */}
         {successMessage && (
           <div style={{
             display: 'flex',
@@ -245,7 +241,6 @@ export const AuthModal: React.FC = () => {
           </div>
         )}
 
-        {/* Forms */}
         <form onSubmit={authModalTab === 'login' ? handleLogin : handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           {authModalTab === 'register' && (
             <div>
@@ -360,7 +355,6 @@ export const AuthModal: React.FC = () => {
           </button>
         </form>
 
-        {/* 1-Click RBAC Testing Presets */}
         {authModalTab === 'login' && (
           <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border-subtle)' }}>
             <div style={{ fontSize: '0.74rem', color: 'var(--text-tertiary)', marginBottom: '8px', textAlign: 'center' }}>

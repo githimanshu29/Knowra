@@ -2,7 +2,7 @@
 import axios from 'axios';
 
 // Base API URL pointing to Express 5 backend
-const API_BASE_URL = '/api/v1';
+const API_BASE_URL = 'http://localhost:5000/api/v1';
 
 // Axios instance with default headers
 export const apiClient = axios.create({
@@ -111,8 +111,25 @@ export const knowraApi = {
     return res.data;
   },
 
-  registerTenant: async (data: { name: string; slug: string; adminEmail: string; adminPassword: string; adminFullName: string }) => {
-    const res = await apiClient.post('/auth/register-tenant', data);
+  registerTenant: async (data: {
+    tenantName: string;
+    tenantSlug: string;
+    adminEmail: string;
+    adminPassword: string;
+    adminFullName: string;
+    name?: string;
+    slug?: string;
+  }) => {
+    const payload = {
+      tenantName: data.tenantName || data.name,
+      tenantSlug: data.tenantSlug || data.slug,
+      name: data.name || data.tenantName,
+      slug: data.slug || data.tenantSlug,
+      adminEmail: data.adminEmail,
+      adminPassword: data.adminPassword,
+      adminFullName: data.adminFullName,
+    };
+    const res = await apiClient.post('/auth/register-tenant', payload);
     return res.data;
   },
 

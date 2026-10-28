@@ -2,17 +2,51 @@
 import { z } from 'zod';
 
 // Zod schema for creating a new tenant organization and initial admin account
-export const registerTenantSchema = z.object({
-  tenantName: z.string().min(2).max(100),
-  tenantSlug: z
-    .string()
-    .min(2)
-    .max(50)
-    .regex(/^[a-z0-9-]+$/, 'Slug must be lowercase alphanumeric with hyphens'),
-  adminEmail: z.string().email(),
-  adminPassword: z.string().min(8, 'Password must be at least 8 characters'),
-  adminFullName: z.string().min(2).max(100),
-});
+export const registerTenantSchema = z
+  .object({
+    tenantName: z.string().min(2).max(100).optional(),
+    name: z.string().min(2).max(100).optional(),
+    tenantSlug: z
+      .string()
+      .min(2)
+      .max(50)
+      .regex(/^[a-z0-9-]+$/, 'Slug must be lowercase alphanumeric with hyphens')
+      .optional(),
+    slug: z
+      .string()
+      .min(2)
+      .max(50)
+      .regex(/^[a-z0-9-]+$/, 'Slug must be lowercase alphanumeric with hyphens')
+      .optional(),
+    adminEmail: z.string().email(),
+    adminPassword: z.string().min(8, 'Password must be at least 8 characters'),
+    adminFullName: z.string().min(2).max(100),
+  })
+  .superRefine((data, ctx) => {
+    const orgName = data.tenantName || data.name;
+    const orgSlug = data.tenantSlug || data.slug;
+    if (!orgName || orgName.trim().length < 2) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Organization or tenant name must be at least 2 characters',
+        path: ['tenantName'],
+      });
+    }
+    if (!orgSlug || orgSlug.trim().length < 2) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Tenant slug must be at least 2 lowercase alphanumeric characters with hyphens',
+        path: ['tenantSlug'],
+      });
+    }
+  })
+  .transform((data) => ({
+    tenantName: (data.tenantName || data.name || '').trim(),
+    tenantSlug: (data.tenantSlug || data.slug || '').trim(),
+    adminEmail: data.adminEmail.trim().toLowerCase(),
+    adminPassword: data.adminPassword,
+    adminFullName: data.adminFullName.trim(),
+  }));
 
 // Zod schema for user login payload
 export const loginSchema = z.object({
