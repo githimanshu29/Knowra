@@ -72,7 +72,8 @@ export const NeuralChatView: React.FC = () => {
     dispatch(setActiveConversationId(convId));
     try {
       const data = await knowraApi.getConversation(convId);
-      dispatch(setMessages(data.messages || []));
+      const msgs = data.messages || data.conversation?.messages || [];
+      dispatch(setMessages(msgs));
     } catch (err) {
       console.error('Failed to load conversation messages:', err);
     }
@@ -254,9 +255,30 @@ export const NeuralChatView: React.FC = () => {
                   </div>
 
                   <button
+                    type="button"
+                    title="Delete Investigation"
                     onClick={(e) => handleDeleteConversation(e, conv.id)}
                     className="btn-ghost"
-                    style={{ padding: '4px', border: 'none', background: 'transparent', opacity: 0.6 }}
+                    style={{
+                      padding: '4px',
+                      border: 'none',
+                      background: 'transparent',
+                      opacity: 0.6,
+                      cursor: 'pointer',
+                      color: 'var(--text-tertiary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: '4px',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.opacity = '1';
+                      e.currentTarget.style.color = '#ef4444';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.opacity = '0.6';
+                      e.currentTarget.style.color = 'var(--text-tertiary)';
+                    }}
                   >
                     <Trash2 size={13} />
                   </button>

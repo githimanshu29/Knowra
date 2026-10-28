@@ -6,6 +6,7 @@ import { authenticate } from '../middleware/auth.js';
 import {
   chatQueryHandler,
   createConversationHandler,
+  deleteConversationHandler,
   getConversationDetailsHandler,
   listConversationsHandler,
 } from '../controllers/chat.controller.js';
@@ -30,6 +31,9 @@ router.get('/conversations', authenticate, listConversationsHandler);
 
 // Route: Get conversation details and chronological messages
 router.get('/conversations/:id', authenticate, getConversationDetailsHandler);
+
+// Route: Delete conversation thread and its messages
+router.delete('/conversations/:id', authenticate, deleteConversationHandler);
 
 // Default export of configured router
 export default router;

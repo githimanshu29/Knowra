@@ -184,7 +184,11 @@ export const knowraApi = {
 
   getConversation: async (id: string): Promise<{ conversation: ConversationItem; messages: MessageItem[] }> => {
     const res = await apiClient.get(`/chat/conversations/${id}`);
-    return res.data;
+    const messages = res.data.messages || res.data.conversation?.messages || [];
+    return {
+      conversation: res.data.conversation,
+      messages,
+    };
   },
 
   deleteConversation: async (id: string): Promise<void> => {

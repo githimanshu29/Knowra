@@ -291,16 +291,21 @@ export async function getConversationDetailsHandler(req: Request, res: Response,
   try {
     const tenantId = req.user!.tenantId;
     const userId = req.user!.userId;
+    const isSuperAdmin =
+      Boolean(req.user!.isSuperAdmin) ||
+      (req.user!.roles && req.user!.roles.some((r) => r.toUpperCase() === 'ADMIN' || r.toUpperCase() === 'SUPER_ADMIN'));
     const conversationId = req.params.id as string;
 
     const conv = await db.query.conversations.findFirst({
       where: and(
         eq(conversations.id, conversationId),
         eq(conversations.tenantId, tenantId),
-        eq(conversations.userId, userId)
+        isSuperAdmin ? sql`1=1` : eq(conversations.userId, userId)
       ),
       with: {
-        messages: true,
+        messages: {
+          orderBy: [asc(messages.createdAt)],
+        },
       },
     });
 
@@ -309,7 +314,42 @@ export async function getConversationDetailsHandler(req: Request, res: Response,
       return;
     }
 
-    res.status(200).json({ conversation: conv });
+    res.status(200).json({
+      conversation: conv,
+      messages: conv.messages || [],
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Deletes a conversation thread and its associated messages
+// returns: Promise<void> responds with 200 json { message: string, id: string }
+export async function deleteConversationHandler(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const tenantId = req.user!.tenantId;
+    const userId = req.user!.userId;
+    const isSuperAdmin =
+      Boolean(req.user!.isSuperAdmin) ||
+      (req.user!.roles && req.user!.roles.some((r) => r.toUpperCase() === 'ADMIN' || r.toUpperCase() === 'SUPER_ADMIN'));
+    const conversationId = req.params.id as string;
+
+    const existing = await db.query.conversations.findFirst({
+      where: and(
+        eq(conversations.id, conversationId),
+        eq(conversations.tenantId, tenantId),
+        isSuperAdmin ? sql`1=1` : eq(conversations.userId, userId)
+      ),
+    });
+
+    if (!existing) {
+      res.status(404).json({ error: 'Not Found', message: 'Conversation not found or access denied' });
+      return;
+    }
+
+    await db.delete(conversations).where(eq(conversations.id, conversationId));
+
+    res.status(200).json({ message: 'Conversation deleted successfully', id: conversationId });
   } catch (error) {
     next(error);
   }
