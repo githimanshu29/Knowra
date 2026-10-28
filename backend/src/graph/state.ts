@@ -11,10 +11,16 @@ import { PiiEntityMatch } from '../services/security/guardrails.js';
 export interface CitationItem {
   citationTag: string;
   documentId: string;
+  chunkId?: string;
+  documentTitle?: string;
+  pageNumber?: number | null;
+  sectionHeading?: string | null;
   headingPath: string | null;
   snippet: string;
+  sourceSnippet?: string;
   claim?: string;
   isEntailed?: boolean;
+  relevanceScore?: number;
 }
 
 // TypeScript Concept: State Definition

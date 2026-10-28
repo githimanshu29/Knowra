@@ -24,8 +24,9 @@ export const EvidenceDrawer: React.FC = () => {
 
   // Copies snippet text to user clipboard
   const handleCopySnippet = () => {
-    if (activeEvidence.sourceSnippet) {
-      navigator.clipboard.writeText(activeEvidence.sourceSnippet);
+    const textToCopy = activeEvidence.sourceSnippet || activeEvidence.snippet || '';
+    if (textToCopy) {
+      navigator.clipboard.writeText(textToCopy);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -105,13 +106,13 @@ export const EvidenceDrawer: React.FC = () => {
           </div>
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-            {activeEvidence.pageNumber !== null && (
+            {activeEvidence.pageNumber !== null && activeEvidence.pageNumber !== undefined && (
               <span className="glass-pill" style={{ padding: '3px 10px', fontSize: '0.75rem', color: '#38bdf8' }}>
                 Page {activeEvidence.pageNumber}
               </span>
             )}
             <span className="glass-pill" style={{ padding: '3px 10px', fontSize: '0.75rem', color: '#a855f7' }}>
-              Chunk {activeEvidence.chunkId.slice(0, 8)}...
+              Chunk {(activeEvidence.chunkId || activeEvidence.documentId || '').slice(0, 8)}...
             </span>
             <span className="badge badge-grounded" style={{ fontSize: '0.72rem' }}>
               Cosine Distance Match
@@ -171,8 +172,9 @@ export const EvidenceDrawer: React.FC = () => {
             lineHeight: 1.6,
             color: '#e2e8f0',
             boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.5)',
+            whiteSpace: 'pre-wrap',
           }}>
-            {activeEvidence.sourceSnippet}
+            {activeEvidence.sourceSnippet || activeEvidence.snippet}
           </div>
         </div>
 

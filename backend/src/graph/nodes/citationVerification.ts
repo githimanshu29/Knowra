@@ -132,11 +132,17 @@ export async function citationVerificationNode(state: KnowraAgentState): Promise
             if (!alreadyExists) {
               verifiedCitations.push({
                 citationTag: `[Evidence ${indexNum}]`,
+                chunkId: chunk.id,
                 documentId: chunk.documentId,
+                documentTitle: chunk.sectionHeading || chunk.headingPath?.split('>')[0]?.trim() || 'Paytm-Saathi.pdf',
+                pageNumber: chunk.pageNumber,
+                sectionHeading: chunk.sectionHeading,
                 headingPath: chunk.headingPath,
-                snippet: chunk.content.slice(0, 250).replace(/\n/g, ' '),
+                snippet: chunk.content.slice(0, 300).replace(/\n/g, ' '),
+                sourceSnippet: chunk.content,
                 claim: sentence,
                 isEntailed: true,
+                relevanceScore: chunk.rerankScore,
               });
             }
           }

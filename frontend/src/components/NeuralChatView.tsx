@@ -30,6 +30,96 @@ import { openAuthModal } from '../store/slices/uiSlice.js';
 // API service client
 import { knowraApi } from '../services/api.js';
 
+// Parses bold tags and in-text evidence tags into styled spans
+// returns: React.ReactNode
+function renderInlineMarkdown(text: string): React.ReactNode {
+  const boldParts = text.split(/(\*\*[^*]+\*\*)/g);
+  return boldParts.map((part, pIdx) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      const cleanBold = part.slice(2, -2);
+      return <strong key={pIdx} style={{ color: '#f8fafc', fontWeight: 600 }}>{cleanBold}</strong>;
+    }
+    const evidenceParts = part.split(/(\[Evidence\s+\d+\])/gi);
+    return evidenceParts.map((subPart, sIdx) => {
+      if (/^\[Evidence\s+\d+\]$/i.test(subPart)) {
+        return (
+          <span
+            key={sIdx}
+            style={{
+              display: 'inline-block',
+              background: 'rgba(0, 242, 254, 0.12)',
+              color: '#00f2fe',
+              padding: '1px 6px',
+              borderRadius: '4px',
+              fontSize: '0.74rem',
+              fontWeight: 600,
+              marginLeft: '4px',
+              marginRight: '2px',
+              border: '1px solid rgba(0, 242, 254, 0.3)',
+            }}
+          >
+            {subPart}
+          </span>
+        );
+      }
+      return subPart;
+    });
+  });
+}
+
+// Converts markdown headings, lists, and breaks into structured React components
+// returns: React.ReactNode
+function renderFormattedMarkdown(rawText: string): React.ReactNode {
+  if (!rawText) return null;
+  const lines = rawText.split('\n');
+
+  return lines.map((line, idx) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('#### ')) {
+      return (
+        <h4 key={idx} style={{ fontSize: '0.94rem', fontWeight: 700, color: '#38bdf8', marginTop: '12px', marginBottom: '6px' }}>
+          {renderInlineMarkdown(trimmed.slice(5))}
+        </h4>
+      );
+    }
+    if (trimmed.startsWith('### ')) {
+      return (
+        <h3 key={idx} style={{ fontSize: '1.05rem', fontWeight: 700, color: '#f8fafc', marginTop: '14px', marginBottom: '8px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '4px' }}>
+          {renderInlineMarkdown(trimmed.slice(4))}
+        </h3>
+      );
+    }
+    if (trimmed.startsWith('## ')) {
+      return (
+        <h2 key={idx} style={{ fontSize: '1.16rem', fontWeight: 700, color: '#00f2fe', marginTop: '16px', marginBottom: '8px' }}>
+          {renderInlineMarkdown(trimmed.slice(3))}
+        </h2>
+      );
+    }
+    if (trimmed === '---') {
+      return <hr key={idx} style={{ border: 'none', borderTop: '1px solid var(--border-subtle)', margin: '12px 0' }} />;
+    }
+    if (trimmed.startsWith('* ') || trimmed.startsWith('- ')) {
+      return (
+        <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginLeft: '8px', marginBottom: '4px' }}>
+          <span style={{ color: '#00f2fe', fontSize: '0.7rem', marginTop: '4px' }}>●</span>
+          <div style={{ flex: 1, fontSize: '0.9rem', lineHeight: 1.6 }}>
+            {renderInlineMarkdown(trimmed.slice(2))}
+          </div>
+        </div>
+      );
+    }
+    if (!trimmed) {
+      return <div key={idx} style={{ height: '6px' }} />;
+    }
+    return (
+      <p key={idx} style={{ margin: '0 0 6px 0', fontSize: '0.9rem', lineHeight: 1.6 }}>
+        {renderInlineMarkdown(line)}
+      </p>
+    );
+  });
+}
+
 // Neural RAG investigation canvas with multi-turn sidebar, token streaming, and citation chips
 // returns: React.JSX.Element
 export const NeuralChatView: React.FC = () => {
@@ -410,7 +500,11 @@ export const NeuralChatView: React.FC = () => {
                       color: '#f8fafc',
                     }}
                   >
-                    <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+                    {msg.role === 'user' ? (
+                      <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+                    ) : (
+                      <div>{renderFormattedMarkdown(msg.content)}</div>
+                    )}
 
                     {/* Citations and Grounding HUD for Assistant */}
                     {msg.role === 'assistant' && (
@@ -484,8 +578,10 @@ export const NeuralChatView: React.FC = () => {
                     lineHeight: 1.6,
                     color: '#f8fafc',
                   }}>
-                    <span style={{ whiteSpace: 'pre-wrap' }}>{streamingText}</span>
-                    <span className="typing-cursor" />
+                    <div>
+                      {renderFormattedMarkdown(streamingText)}
+                      <span className="typing-cursor" />
+                    </div>
 
                     {streamingCitations.length > 0 && (
                       <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--border-subtle)', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
