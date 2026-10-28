@@ -104,13 +104,20 @@ async function requestEmbeddingWithFallback(
   input: string | string[],
   isGemini: boolean
 ): Promise<OpenAI.Embeddings.CreateEmbeddingResponse> {
-  try {
-    return await client.embeddings.create({ model: primaryModel, input });
-  } catch (err) {
-    if (!isGemini) throw err;
-    const fallbackModel = primaryModel === 'gemini-embedding-001' ? 'text-embedding-004' : 'gemini-embedding-001';
-    return await client.embeddings.create({ model: fallbackModel, input });
+  const modelsToTry = isGemini
+    ? [primaryModel, 'text-embedding-004', 'gemini-embedding-001'].filter((m, i, arr) => arr.indexOf(m) === i)
+    : [primaryModel];
+
+  let lastError: unknown;
+  for (const m of modelsToTry) {
+    try {
+      return await client.embeddings.create({ model: m, input });
+    } catch (err) {
+      lastError = err;
+      console.warn(`Embedding model ${m} failed: ${(err as Error).message}. Attempting fallback...`);
+    }
   }
+  throw lastError;
 }
 
 // Generates a single vector embedding for a given text string

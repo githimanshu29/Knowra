@@ -107,7 +107,7 @@ export async function chatQueryHandler(req: Request, res: Response): Promise<voi
         messages: conversationHistory,
         streamTokenCallback: (token: string) => {
           if (!clientDisconnected) {
-            sendSseEvent(res, 'token', { text: token });
+            sendSseEvent(res, 'token', { text: token, token });
           }
         },
       });
@@ -133,16 +133,29 @@ export async function chatQueryHandler(req: Request, res: Response): Promise<voi
         piiEntitiesDetected: finalState.piiEntitiesDetected || [],
       });
 
-      // Persist conversation messages to database if conversationId is provided
-      if (conversationId) {
+      // Persist conversation messages to database
+      let effectiveConvId = conversationId;
+      if (!effectiveConvId) {
+        const [newConv] = await db
+          .insert(conversations)
+          .values({
+            tenantId,
+            userId,
+            title: query.slice(0, 60),
+          })
+          .returning();
+        effectiveConvId = newConv?.id;
+      }
+
+      if (effectiveConvId) {
         await db.insert(messages).values([
           {
-            conversationId,
+            conversationId: effectiveConvId,
             role: 'user',
             content: query,
           },
           {
-            conversationId,
+            conversationId: effectiveConvId,
             role: 'assistant',
             content: finalState.generatedAnswer,
             citations: finalState.citations,
@@ -151,17 +164,19 @@ export async function chatQueryHandler(req: Request, res: Response): Promise<voi
         ]);
       }
 
-      // Emit completion with execution metrics
+      // Emit completion with execution metrics and conversation ID
       sendSseEvent(res, 'done', {
+        conversationId: effectiveConvId,
         executionMetrics: finalState.executionMetrics,
       });
 
       res.end();
       return;
     } catch (err: unknown) {
-      console.error('Chat streaming execution internal error:', err);
+      const detailedError = err instanceof Error ? err.message : String(err);
+      console.error('Chat streaming execution internal error:', detailedError, err);
       sendSseEvent(res, 'error', {
-        error: 'The knowledge intelligence streaming service encountered an unexpected error. Please try again.',
+        error: detailedError || 'The knowledge intelligence streaming service encountered an unexpected error. Please try again.',
       });
       res.end();
       return;
@@ -177,16 +192,28 @@ export async function chatQueryHandler(req: Request, res: Response): Promise<voi
       messages: conversationHistory,
     });
 
-    // Persist conversation messages to database if conversationId is provided
-    if (conversationId) {
+    let effectiveConvId = conversationId;
+    if (!effectiveConvId) {
+      const [newConv] = await db
+        .insert(conversations)
+        .values({
+          tenantId,
+          userId,
+          title: query.slice(0, 60),
+        })
+        .returning();
+      effectiveConvId = newConv?.id;
+    }
+
+    if (effectiveConvId) {
       await db.insert(messages).values([
         {
-          conversationId,
+          conversationId: effectiveConvId,
           role: 'user',
           content: query,
         },
         {
-          conversationId,
+          conversationId: effectiveConvId,
           role: 'assistant',
           content: finalState.generatedAnswer,
           citations: finalState.citations,
@@ -196,6 +223,7 @@ export async function chatQueryHandler(req: Request, res: Response): Promise<voi
     }
 
     res.status(200).json({
+      conversationId: effectiveConvId,
       query: finalState.query,
       answer: finalState.generatedAnswer,
       citations: finalState.citations,
@@ -207,10 +235,11 @@ export async function chatQueryHandler(req: Request, res: Response): Promise<voi
       executionMetrics: finalState.executionMetrics,
     });
   } catch (err: unknown) {
-    console.error('Chat query execution internal error:', err);
+    const detailedError = err instanceof Error ? err.message : String(err);
+    console.error('Chat query execution internal error:', detailedError, err);
     res.status(500).json({
       error: 'Query Execution Failed',
-      message: 'The knowledge intelligence service encountered an unexpected error. Please try again.',
+      message: detailedError || 'The knowledge intelligence service encountered an unexpected error. Please try again.',
     });
   }
 }

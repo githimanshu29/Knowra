@@ -120,35 +120,69 @@ export async function generationNode(state: KnowraAgentState): Promise<Partial<K
 
   try {
     const { client, model } = llmConfig;
+    const isGemini = env.LLM_PROVIDER === 'gemini' || (!env.OPENAI_API_KEY && Boolean(env.GEMINI_API_KEY));
+    const modelsToTry = isGemini
+      ? [model, 'gemini-1.5-flash', 'gemini-2.0-flash-lite'].filter((m, i, arr) => arr.indexOf(m) === i)
+      : [model];
+
+    let lastError: unknown;
+    let generationSuccess = false;
 
     if (state.streamTokenCallback) {
-      // True token-by-token streaming directly from LLM API
-      const stream = await client.chat.completions.create({
-        model,
-        temperature: 0,
-        stream: true,
-        messages: chatMessages,
-      });
+      // True token-by-token streaming directly from LLM API with fallback
+      for (const m of modelsToTry) {
+        try {
+          const stream = await client.chat.completions.create({
+            model: m,
+            temperature: 0,
+            stream: true,
+            messages: chatMessages,
+          });
 
-      for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta?.content || '';
-        if (delta.length > 0) {
-          finalAnswer += delta;
-          state.streamTokenCallback(delta);
+          for await (const chunk of stream) {
+            const delta = chunk.choices[0]?.delta?.content || '';
+            if (delta.length > 0) {
+              finalAnswer += delta;
+              state.streamTokenCallback(delta);
+            }
+          }
+          generationSuccess = true;
+          break;
+        } catch (streamErr) {
+          lastError = streamErr;
+          console.warn(`Streaming with model ${m} failed: ${(streamErr as Error).message}. Trying next fallback...`);
         }
       }
-    } else {
-      // Standard non-streaming completion
-      const completion = await client.chat.completions.create({
-        model,
-        temperature: 0,
-        messages: chatMessages,
-      });
+    }
 
-      finalAnswer = completion.choices[0]?.message?.content || '';
+    // Fallback to standard non-streaming completion if streaming failed or wasn't requested
+    if (!generationSuccess) {
+      for (const m of modelsToTry) {
+        try {
+          const completion = await client.chat.completions.create({
+            model: m,
+            temperature: 0,
+            messages: chatMessages,
+          });
+
+          finalAnswer = completion.choices[0]?.message?.content || '';
+          if (state.streamTokenCallback && finalAnswer.length > 0) {
+            state.streamTokenCallback(finalAnswer);
+          }
+          generationSuccess = true;
+          break;
+        } catch (compErr) {
+          lastError = compErr;
+          console.warn(`Completion with model ${m} failed: ${(compErr as Error).message}. Trying next fallback...`);
+        }
+      }
+    }
+
+    if (!generationSuccess && lastError) {
+      throw lastError;
     }
   } catch (error) {
-    throw new Error(`OpenAI generation request failed: ${(error as Error).message}`);
+    throw new Error(`Generation request failed: ${(error as Error).message}`);
   }
 
   const durationMs = Date.now() - startTime;

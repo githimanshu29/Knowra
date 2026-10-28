@@ -257,7 +257,7 @@ export const knowraApi = {
         if (eventType === 'token' && dataStr) {
           try {
             const parsed = JSON.parse(dataStr);
-            callbacks.onToken(parsed.token || '');
+            callbacks.onToken(parsed.token || parsed.text || '');
           } catch {
             callbacks.onToken(dataStr);
           }

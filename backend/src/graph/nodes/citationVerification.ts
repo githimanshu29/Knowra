@@ -4,8 +4,9 @@ import { CitationItem, KnowraAgentState } from '../state.js';
 // Verifies whether numbers and key terms in a claim statement exist as exact tokens in candidate chunk
 // returns: boolean
 export function verifyClaimGroundedness(claim: string, chunkContent: string): boolean {
-  const cleanChunk = chunkContent.toLowerCase();
-  const cleanClaim = claim.toLowerCase();
+  if (!claim || !chunkContent) return false;
+  const cleanChunk = (chunkContent || '').toLowerCase();
+  const cleanClaim = (claim || '').toLowerCase();
 
   // Strip [evidence N] citation tags so citation indices are not treated as factual claims
   const claimTextWithoutTags = cleanClaim.replace(/\[evidence\s+\d+[^\]]*\]/gi, '');

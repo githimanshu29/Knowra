@@ -143,6 +143,7 @@ export const NeuralChatView: React.FC = () => {
             setIsSubmitting(false);
           },
           onError: (errMsg) => {
+            dispatch(setStreamCitations({ citations: [], groundingScore: 0, warning: errMsg }));
             dispatch(appendStreamToken(`\n\n[Error: ${errMsg}]`));
             dispatch(finalizeStream({ id: `asst-${Date.now()}`, conversationId: activeConversationId || '' }));
             setIsSubmitting(false);
@@ -150,6 +151,7 @@ export const NeuralChatView: React.FC = () => {
         });
       } catch (err: unknown) {
         console.error('Streaming request failed:', err);
+        dispatch(setStreamCitations({ citations: [], groundingScore: 0, warning: 'Network connection error' }));
         dispatch(appendStreamToken('\n\n[Network connection error occurred]'));
         dispatch(finalizeStream({ id: `asst-${Date.now()}`, conversationId: activeConversationId || '' }));
         setIsSubmitting(false);
