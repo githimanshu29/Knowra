@@ -49,13 +49,13 @@ export async function checkDatabaseConnection(): Promise<boolean> {
     try {
       // Simple SELECT 1 query execute karke health check karte hain
       await client.query('SELECT 1');
-      console.log('PostgreSQL connection success');
+      console.log('✅✅✅✅PostgreSQL connection success');
       return true;
     } finally {
       client.release();
     }
   } catch (error) {
-    console.error('PostgreSQL connection check failed:', (error as Error).message);
+    console.error('❌❌❌PostgreSQL connection check failed:', (error as Error).message);
     return false;
   }
 }

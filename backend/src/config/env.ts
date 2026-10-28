@@ -34,6 +34,7 @@ const envSchema = z
     OPENAI_API_KEY: z.string().optional(),
     GEMINI_API_KEY: z.string().optional(),
     GEMINI_MODEL: z.string().default('gemini-2.0-flash'),
+    GEMINI_EMBEDDING_MODEL: z.string().default('gemini-embedding-001'),
     LLM_PROVIDER: z.enum(['gemini', 'openai']).default('gemini'),
     COHERE_API_KEY: z.string().optional(),
     LANGCHAIN_TRACING_V2: z.coerce.boolean().default(false),

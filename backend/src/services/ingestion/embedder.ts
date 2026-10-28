@@ -22,7 +22,7 @@ function getEmbeddingConfig(): EmbeddingConfig | null {
         apiKey: env.GEMINI_API_KEY.trim(),
         baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
       }),
-      model: 'text-embedding-004',
+      model: env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001',
       isGemini: true,
     };
   }
@@ -96,6 +96,23 @@ export function generateTestMockEmbedding(text: string, dimensions: number = 153
   return normalizeVector(vector);
 }
 
+// Invokes embedding request with resilient fallback between Gemini embedding models
+// returns: Promise<OpenAI.Embeddings.CreateEmbeddingResponse>
+async function requestEmbeddingWithFallback(
+  client: OpenAI,
+  primaryModel: string,
+  input: string | string[],
+  isGemini: boolean
+): Promise<OpenAI.Embeddings.CreateEmbeddingResponse> {
+  try {
+    return await client.embeddings.create({ model: primaryModel, input });
+  } catch (err) {
+    if (!isGemini) throw err;
+    const fallbackModel = primaryModel === 'gemini-embedding-001' ? 'text-embedding-004' : 'gemini-embedding-001';
+    return await client.embeddings.create({ model: fallbackModel, input });
+  }
+}
+
 // Generates a single vector embedding for a given text string
 // returns: Promise<number[]> 1536-dimensional float vector
 export async function generateEmbedding(text: string): Promise<number[]> {
@@ -106,10 +123,12 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   }
 
   try {
-    const response = await config.client.embeddings.create({
-      model: config.model,
-      input: text.replace(/\n/g, ' '),
-    });
+    const response = await requestEmbeddingWithFallback(
+      config.client,
+      config.model,
+      text.replace(/\n/g, ' '),
+      config.isGemini
+    );
 
     const rawVector = response.data[0].embedding;
     return adaptVectorDimension(rawVector, 1536);
@@ -140,10 +159,12 @@ export async function batchGenerateEmbeddings(
     const batchTexts = texts.slice(i, i + effectiveBatchSize).map((t) => t.replace(/\n/g, ' '));
 
     try {
-      const response = await config.client.embeddings.create({
-        model: config.model,
-        input: batchTexts,
-      });
+      const response = await requestEmbeddingWithFallback(
+        config.client,
+        config.model,
+        batchTexts,
+        config.isGemini
+      );
 
       // Sort results by index to preserve input order
       const sortedItems = response.data.sort((a, b) => a.index - b.index);

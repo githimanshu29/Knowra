@@ -1,10 +1,7 @@
-// Node module helper to import CommonJS modules in ESM
-import { createRequire } from 'module';
 // DOCX to HTML and structured text converter
 import mammoth from 'mammoth';
-
-const require = createRequire(import.meta.url);
-const pdf = require('pdf-parse');
+// PDF parser class from pdf-parse v2
+import { PDFParse } from 'pdf-parse';
 
 // TypeScript Concept: Union Type
 // DocType restricts the string to only approved enterprise document formats
@@ -127,22 +124,19 @@ async function parsePdf(
   timestamp: string,
   accessLevel: AccessLevel
 ): Promise<ParsedDocument> {
-  const pageTexts: { page: number; text: string }[] = [];
-  let pageCounter = 1;
+  const parser = new PDFParse({ data: buffer });
+  let textResult;
 
-  // Custom page renderer hook extracts text per exact page number
-  await pdf(buffer, {
-    pagerender: async (pageData: any): Promise<string> => {
-      const textContent = await pageData.getTextContent();
-      const pageString = textContent.items.map((item: any) => item.str).join(' ');
-      pageTexts.push({ page: pageCounter++, text: pageString.trim() });
-      return pageString;
-    },
-  });
+  try {
+    textResult = await parser.getText();
+  } finally {
+    await parser.destroy();
+  }
 
   const blocks: SemanticBlock[] = [];
+  const pages = textResult.pages || [];
 
-  for (const pageItem of pageTexts) {
+  for (const pageItem of pages) {
     if (!pageItem.text) continue;
     const paragraphs = pageItem.text.split(/(?:\r?\n){2,}/);
 
@@ -155,7 +149,7 @@ async function parsePdf(
         blockType: 'paragraph',
         metadata: {
           source,
-          page: pageItem.page,
+          page: pageItem.num,
           timestamp,
           docType: 'pdf',
           accessLevel,
@@ -167,7 +161,7 @@ async function parsePdf(
   return {
     source,
     docType: 'pdf',
-    pageCount: pageTexts.length,
+    pageCount: pages.length || 1,
     totalBlocks: blocks.length,
     timestamp,
     accessLevel,

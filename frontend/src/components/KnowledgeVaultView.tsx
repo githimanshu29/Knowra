@@ -55,6 +55,20 @@ export const KnowledgeVaultView: React.FC = () => {
     loadDocuments();
   }, [isAuthenticated]);
 
+  // Auto-polls vault while any document is in PROCESSING or QUEUED state
+  useEffect(() => {
+    const hasPending = documents.some((d) => d.status === 'PROCESSING' || d.status === 'QUEUED');
+    if (!hasPending || !isAuthenticated) return;
+
+    const intervalId = setInterval(() => {
+      knowraApi.getDocuments()
+        .then((docs) => dispatch(setDocuments(docs)))
+        .catch((err) => console.error('Auto-refresh vault failed:', err));
+    }, 2500);
+
+    return () => clearInterval(intervalId);
+  }, [documents, isAuthenticated]);
+
   // Handles file upload execution
   const handleUploadFile = async (file: File) => {
     if (!isAuthenticated) {
@@ -360,6 +374,22 @@ export const KnowledgeVaultView: React.FC = () => {
                     {formatBytes(doc.fileSizeBytes)}
                   </span>
                 </div>
+
+                {doc.status === 'ERROR' && doc.errorMessage && (
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'rgba(244, 63, 94, 0.08)',
+                    border: '1px solid rgba(244, 63, 94, 0.2)',
+                    fontSize: '0.72rem',
+                    color: '#fb7185',
+                    lineHeight: 1.4,
+                    wordBreak: 'break-word',
+                  }}>
+                    {doc.errorMessage}
+                  </div>
+                )}
               </div>
 
               {/* Actions Footer */}

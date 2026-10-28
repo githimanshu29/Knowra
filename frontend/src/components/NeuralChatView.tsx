@@ -509,28 +509,47 @@ export const NeuralChatView: React.FC = () => {
             }}
             style={{ display: 'flex', alignItems: 'center', gap: '12px' }}
           >
-            {/* Stream Toggle Switch */}
             <button
               type="button"
               onClick={() => setUseStreaming(!useStreaming)}
               className="glass-pill"
-              title="Toggle Server-Sent Events Token Streaming"
+              title={useStreaming ? 'Streaming mode active: word-by-word real-time output' : 'Synchronous mode: complete answer returned together'}
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px',
-                padding: '8px 12px',
-                fontSize: '0.75rem',
+                gap: '8px',
+                padding: '8px 14px',
+                fontSize: '0.76rem',
                 cursor: 'pointer',
+                transition: 'all var(--transition-fast)',
+                background: useStreaming
+                  ? 'linear-gradient(135deg, rgba(0, 242, 254, 0.18), rgba(168, 85, 247, 0.18))'
+                  : 'rgba(255, 255, 255, 0.03)',
+                borderColor: useStreaming ? 'rgba(0, 242, 254, 0.55)' : 'rgba(255, 255, 255, 0.08)',
                 color: useStreaming ? '#00f2fe' : 'var(--text-tertiary)',
-                borderColor: useStreaming ? 'rgba(0, 242, 254, 0.3)' : 'var(--border-subtle)',
+                boxShadow: useStreaming ? '0 0 16px rgba(0, 242, 254, 0.3)' : 'none',
               }}
             >
-              <Zap size={14} color={useStreaming ? '#00f2fe' : 'var(--text-tertiary)'} />
-              <span style={{ fontWeight: 600 }}>{useStreaming ? 'SSE Stream' : 'Sync'}</span>
+              <Zap
+                size={14}
+                color={useStreaming ? '#00f2fe' : 'var(--text-tertiary)'}
+                fill={useStreaming ? '#00f2fe' : 'none'}
+              />
+              <span
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  background: useStreaming ? '#00f2fe' : 'rgba(255, 255, 255, 0.3)',
+                  boxShadow: useStreaming ? '0 0 8px #00f2fe' : 'none',
+                  display: 'inline-block',
+                }}
+              />
+              <span style={{ fontWeight: 600 }}>
+                {useStreaming ? 'Stream: ON (SSE)' : 'Stream: OFF (Sync)'}
+              </span>
             </button>
 
-            {/* Main Text Input */}
             <input
               type="text"
               value={inputQuery}
@@ -541,7 +560,6 @@ export const NeuralChatView: React.FC = () => {
               style={{ flex: 1, padding: '12px 18px', fontSize: '0.9rem' }}
             />
 
-            {/* Send Button */}
             <button
               type="submit"
               disabled={!inputQuery.trim() || isSubmitting || isStreaming}
