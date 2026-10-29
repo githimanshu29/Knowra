@@ -9,6 +9,8 @@ export interface RerankedCandidate {
   id: string;
   tenantId: string;
   documentId: string;
+  documentTitle: string;
+  documentFilename: string;
   versionId: string;
   parentChunkId: string | null;
   chunkIndex: number;
@@ -133,6 +135,8 @@ export async function rerankCandidates(
             id: candidate.id,
             tenantId: candidate.tenantId,
             documentId: candidate.documentId,
+            documentTitle: candidate.documentTitle,
+            documentFilename: candidate.documentFilename,
             versionId: candidate.versionId,
             parentChunkId: candidate.parentChunkId,
             chunkIndex: candidate.chunkIndex,
@@ -174,6 +178,8 @@ export async function rerankCandidates(
       id: c.id,
       tenantId: c.tenantId,
       documentId: c.documentId,
+      documentTitle: c.documentTitle,
+      documentFilename: c.documentFilename,
       versionId: c.versionId,
       parentChunkId: c.parentChunkId,
       chunkIndex: c.chunkIndex,
@@ -239,7 +245,8 @@ export function compressAndAssembleContext(
 
   // Format distinct evidence blocks for LLM prompt assembly
   const contextBlocks = evidenceChunks.map((chunk, idx) => {
-    const citation = `[Evidence ${idx + 1}: Document ${chunk.documentId} | Section: ${chunk.headingPath ?? 'General'}]`;
+    const docName = chunk.documentTitle || chunk.documentFilename || `Document ${chunk.documentId}`;
+    const citation = `[Evidence ${idx + 1}: ${docName} | Section: ${chunk.headingPath ?? 'General'}]`;
     return `${citation}\n${chunk.content}`;
   });
 

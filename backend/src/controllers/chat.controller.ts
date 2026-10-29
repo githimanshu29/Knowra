@@ -42,7 +42,7 @@ export async function chatQueryHandler(req: Request, res: Response): Promise<voi
     return;
   }
 
-  const { query, stream, conversationId } = parsedBody.data;
+  const { query, stream, conversationId, documentId } = parsedBody.data;
   const { tenantId, userId, roles, roleIds } = req.user;
   const isSuperAdmin =
     Boolean(req.user.isSuperAdmin) ||
@@ -104,6 +104,7 @@ export async function chatQueryHandler(req: Request, res: Response): Promise<voi
         userId,
         roleIds: roleIds || [],
         isSuperAdmin,
+        documentId: documentId || undefined,
         messages: conversationHistory,
         streamTokenCallback: (token: string) => {
           if (!clientDisconnected) {
@@ -189,6 +190,7 @@ export async function chatQueryHandler(req: Request, res: Response): Promise<voi
       userId,
       roleIds: roleIds || [],
       isSuperAdmin,
+      documentId: documentId || undefined,
       messages: conversationHistory,
     });
 

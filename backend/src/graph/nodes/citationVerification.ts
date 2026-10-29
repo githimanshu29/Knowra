@@ -134,7 +134,7 @@ export async function citationVerificationNode(state: KnowraAgentState): Promise
                 citationTag: `[Evidence ${indexNum}]`,
                 chunkId: chunk.id,
                 documentId: chunk.documentId,
-                documentTitle: chunk.sectionHeading || chunk.headingPath?.split('>')[0]?.trim() || 'Paytm-Saathi.pdf',
+                documentTitle: chunk.documentTitle || chunk.documentFilename || chunk.sectionHeading || 'Knowledge Document',
                 pageNumber: chunk.pageNumber,
                 sectionHeading: chunk.sectionHeading,
                 headingPath: chunk.headingPath,

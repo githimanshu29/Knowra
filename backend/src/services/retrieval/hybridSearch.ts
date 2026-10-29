@@ -17,6 +17,7 @@ export interface HybridSearchOptions {
   userId?: string;
   roleIds?: string[];
   isSuperAdmin?: boolean;
+  documentId?: string;
   vectorCandidateK?: number;
   lexicalCandidateK?: number;
   rrfKConstant?: number;
@@ -39,6 +40,8 @@ export interface HybridSearchResult {
   id: string;
   tenantId: string;
   documentId: string;
+  documentTitle: string;
+  documentFilename: string;
   versionId: string;
   parentChunkId: string | null;
   chunkIndex: number;
@@ -61,6 +64,8 @@ interface RawCandidateRow {
   id: string;
   tenant_id: string;
   document_id: string;
+  document_title?: string;
+  document_filename?: string;
   version_id: string;
   parent_chunk_id: string | null;
   chunk_index: number;
@@ -81,7 +86,8 @@ export async function executeVectorBranch(
   candidateK: number,
   userId?: string,
   roleIds?: string[],
-  isSuperAdmin?: boolean
+  isSuperAdmin?: boolean,
+  documentId?: string
 ): Promise<Array<RawCandidateRow & { vectorScore: number }>> {
   const vectorStr = `[${queryVector.join(',')}]`;
 
@@ -92,6 +98,8 @@ export async function executeVectorBranch(
       c.id,
       c.tenant_id,
       c.document_id,
+      d.title AS document_title,
+      d.filename AS document_filename,
       c.version_id,
       c.parent_chunk_id,
       c.chunk_index,
@@ -107,6 +115,7 @@ export async function executeVectorBranch(
     WHERE c.tenant_id = ${tenantId}
       AND d.status = 'READY'
       AND c.chunk_strategy IN ('child', 'table', 'semantic')
+      ${documentId ? sql`AND c.document_id = ${documentId}` : sql``}
       ${
         isSuperAdmin
           ? sql``
@@ -152,7 +161,8 @@ export async function executeLexicalBranch(
   candidateK: number,
   userId?: string,
   roleIds?: string[],
-  isSuperAdmin?: boolean
+  isSuperAdmin?: boolean,
+  documentId?: string
 ): Promise<Array<RawCandidateRow & { lexicalScore: number }>> {
   if (!cleanQuery || cleanQuery.length === 0) return [];
 
@@ -171,6 +181,8 @@ export async function executeLexicalBranch(
       c.id,
       c.tenant_id,
       c.document_id,
+      d.title AS document_title,
+      d.filename AS document_filename,
       c.version_id,
       c.parent_chunk_id,
       c.chunk_index,
@@ -187,6 +199,7 @@ export async function executeLexicalBranch(
     WHERE c.tenant_id = ${tenantId}
       AND d.status = 'READY'
       AND c.chunk_strategy IN ('child', 'table', 'semantic')
+      ${documentId ? sql`AND c.document_id = ${documentId}` : sql``}
       AND (
         c.search_vector @@ websearch_to_tsquery('english', ${cleanQuery})
         ${orQueryTerms.length > 0 ? sql`OR c.search_vector @@ to_tsquery('english', ${orQueryTerms})` : sql``}
@@ -272,6 +285,7 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
     userId,
     roleIds,
     isSuperAdmin = false,
+    documentId,
     vectorCandidateK = env.VECTOR_CANDIDATE_K,
     lexicalCandidateK = env.LEXICAL_CANDIDATE_K,
     rrfKConstant = env.RRF_K_CONSTANT,
@@ -286,8 +300,8 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
 
   // 2. Execute parallel vector and lexical search branches
   const [vectorCandidates, lexicalCandidates] = await Promise.all([
-    executeVectorBranch(queryVector, tenantId, vectorCandidateK, userId, roleIds, isSuperAdmin),
-    executeLexicalBranch(cleanLexicalQuery, tenantId, lexicalCandidateK, userId, roleIds, isSuperAdmin),
+    executeVectorBranch(queryVector, tenantId, vectorCandidateK, userId, roleIds, isSuperAdmin, documentId),
+    executeLexicalBranch(cleanLexicalQuery, tenantId, lexicalCandidateK, userId, roleIds, isSuperAdmin, documentId),
   ]);
 
   // 3. Compute Reciprocal Rank Fusion scores across both candidate lists
@@ -372,6 +386,8 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
       id: c.id,
       tenantId: c.tenant_id,
       documentId: c.document_id,
+      documentTitle: c.document_title || c.document_filename || 'Knowledge Document',
+      documentFilename: c.document_filename || '',
       versionId: c.version_id,
       parentChunkId: c.parent_chunk_id,
       chunkIndex: c.chunk_index,

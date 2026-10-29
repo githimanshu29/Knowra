@@ -195,8 +195,8 @@ export const knowraApi = {
     await apiClient.delete(`/chat/conversations/${id}`);
   },
 
-  querySync: async (query: string, conversationId?: string): Promise<ChatQueryResponse> => {
-    const res = await apiClient.post('/chat/query', { query, conversationId, stream: false });
+  querySync: async (query: string, conversationId?: string, documentId?: string): Promise<ChatQueryResponse> => {
+    const res = await apiClient.post('/chat/query', { query, conversationId, documentId, stream: false });
     return res.data;
   },
 
@@ -209,7 +209,8 @@ export const knowraApi = {
       onCitations: (citations: CitationItem[], groundingScore: number, isGrounded?: boolean, warning?: string | null) => void;
       onDone: (convId: string) => void;
       onError: (err: string) => void;
-    }
+    },
+    documentId?: string
   ): Promise<void> => {
     const token = localStorage.getItem('knowra_token');
     const response = await fetch(`${API_BASE_URL}/chat/query`, {
@@ -218,7 +219,7 @@ export const knowraApi = {
         'Content-Type': 'application/json',
         Authorization: token ? `Bearer ${token}` : '',
       },
-      body: JSON.stringify({ query, conversationId, stream: true }),
+      body: JSON.stringify({ query, conversationId, documentId, stream: true }),
     });
 
     if (!response.ok) {

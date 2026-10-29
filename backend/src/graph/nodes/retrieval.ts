@@ -21,6 +21,7 @@ export async function retrievalNode(state: KnowraAgentState): Promise<Partial<Kn
     userId: state.userId,
     roleIds: state.roleIds,
     isSuperAdmin: state.isSuperAdmin,
+    documentId: state.documentId,
     limit: env.VECTOR_CANDIDATE_K,
   });
 

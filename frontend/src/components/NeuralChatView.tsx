@@ -27,8 +27,8 @@ import {
   startStreaming,
 } from '../store/slices/chatSlice.js';
 import { openAuthModal } from '../store/slices/uiSlice.js';
-// API service client
-import { knowraApi } from '../services/api.js';
+// API service client and types
+import { knowraApi, type DocumentItem } from '../services/api.js';
 
 // Parses bold tags and in-text evidence tags into styled spans
 // returns: React.ReactNode
@@ -137,6 +137,8 @@ export const NeuralChatView: React.FC = () => {
   const [inputQuery, setInputQuery] = useState('');
   const [useStreaming, setUseStreaming] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [availableDocs, setAvailableDocs] = useState<DocumentItem[]>([]);
+  const [selectedDocId, setSelectedDocId] = useState<string>('all');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scrolls message canvas to bottom
@@ -148,12 +150,16 @@ export const NeuralChatView: React.FC = () => {
     scrollToBottom();
   }, [messages, streamingText]);
 
-  // Loads conversation list on mount or auth change
+  // Loads conversation list and indexed documents on mount or auth change
   useEffect(() => {
     if (isAuthenticated) {
       knowraApi.getConversations()
         .then((convs) => dispatch(setConversations(convs)))
         .catch((err) => console.error('Failed to load conversations:', err));
+
+      knowraApi.getDocuments()
+        .then((docs) => setAvailableDocs(docs.filter((d) => d.status === 'READY')))
+        .catch((err) => console.error('Failed to load scoped documents:', err));
     }
   }, [isAuthenticated, dispatch]);
 
@@ -199,6 +205,8 @@ export const NeuralChatView: React.FC = () => {
       return;
     }
 
+    const docIdToSend = selectedDocId !== 'all' ? selectedDocId : undefined;
+
     setInputQuery('');
     setIsSubmitting(true);
 
@@ -239,7 +247,7 @@ export const NeuralChatView: React.FC = () => {
             dispatch(finalizeStream({ id: `asst-${Date.now()}`, conversationId: activeConversationId || '' }));
             setIsSubmitting(false);
           },
-        });
+        }, docIdToSend);
       } catch (err: unknown) {
         console.error('Streaming request failed:', err);
         dispatch(setStreamCitations({ citations: [], groundingScore: 0, warning: 'Network connection error' }));
@@ -250,7 +258,7 @@ export const NeuralChatView: React.FC = () => {
     } else {
       // Synchronous JSON response
       try {
-        const response = await knowraApi.querySync(textToSend, activeConversationId || undefined);
+        const response = await knowraApi.querySync(textToSend, activeConversationId || undefined, docIdToSend);
         dispatch(
           addMessage({
             id: `asst-${Date.now()}`,
@@ -669,6 +677,35 @@ export const NeuralChatView: React.FC = () => {
                 {useStreaming ? 'Stream: ON (SSE)' : 'Stream: OFF (Sync)'}
               </span>
             </button>
+
+            {/* Document Scope Filter Selector */}
+            {availableDocs.length > 0 && (
+              <select
+                value={selectedDocId}
+                onChange={(e) => setSelectedDocId(e.target.value)}
+                className="glass-pill"
+                title="Filter retrieval context by specific document or search all tenant documents"
+                style={{
+                  padding: '8px 12px',
+                  fontSize: '0.76rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  background: selectedDocId !== 'all' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                  borderColor: selectedDocId !== 'all' ? 'rgba(56, 189, 248, 0.4)' : 'rgba(255, 255, 255, 0.08)',
+                  color: selectedDocId !== 'all' ? '#38bdf8' : 'var(--text-secondary)',
+                  outline: 'none',
+                }}
+              >
+                <option value="all" style={{ background: '#0a0f1c', color: '#f8fafc' }}>
+                  Scope: All Documents ({availableDocs.length})
+                </option>
+                {availableDocs.map((doc) => (
+                  <option key={doc.id} value={doc.id} style={{ background: '#0a0f1c', color: '#f8fafc' }}>
+                    Doc: {doc.filename}
+                  </option>
+                ))}
+              </select>
+            )}
 
             <input
               type="text"

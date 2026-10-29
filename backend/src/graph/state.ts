@@ -32,6 +32,7 @@ export interface KnowraAgentState {
   userId?: string;
   roleIds?: string[];
   isSuperAdmin?: boolean;
+  documentId?: string;
   isConversationalOnly?: boolean;
   isSecurityFlagged?: boolean;
   securityViolationReason?: string;

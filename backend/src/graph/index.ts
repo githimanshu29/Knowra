@@ -37,6 +37,10 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, update) => update,
     default: () => undefined,
   }),
+  documentId: Annotation<string | undefined>({
+    reducer: (_, update) => update,
+    default: () => undefined,
+  }),
   isSuperAdmin: Annotation<boolean | undefined>({
     reducer: (_, update) => update,
     default: () => false,
@@ -146,6 +150,7 @@ export async function executeKnowraQuery(
     userId?: string;
     roleIds?: string[];
     isSuperAdmin?: boolean;
+    documentId?: string;
     messages?: BaseMessage[];
     streamTokenCallback?: (token: string) => void;
   } = {}
@@ -159,6 +164,7 @@ export async function executeKnowraQuery(
     userId: options.userId,
     roleIds: options.roleIds,
     isSuperAdmin: options.isSuperAdmin || false,
+    documentId: options.documentId,
     isConversationalOnly: false,
     isSecurityFlagged: false,
     securityViolationReason: undefined,
