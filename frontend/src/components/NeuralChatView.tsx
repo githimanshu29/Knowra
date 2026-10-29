@@ -292,7 +292,6 @@ export const NeuralChatView: React.FC = () => {
       gap: '20px',
       height: 'calc(100vh - 120px)',
     }}>
-      {/* 1. Multi-Turn Investigation Sidebar */}
       <aside className="glass-panel" style={{
         display: 'flex',
         flexDirection: 'column',
@@ -387,7 +386,6 @@ export const NeuralChatView: React.FC = () => {
         </div>
       </aside>
 
-      {/* 2. Main Neural Interaction Canvas */}
       <section className="glass-panel" style={{
         display: 'flex',
         flexDirection: 'column',
@@ -395,10 +393,8 @@ export const NeuralChatView: React.FC = () => {
         overflow: 'hidden',
         background: 'rgba(10, 15, 28, 0.7)',
       }}>
-        {/* Messages Scroll Area */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {messages.length === 0 && !isStreaming ? (
-            /* Empty State: Holographic Welcome & Preset Prompts */
             <div style={{
               margin: 'auto',
               maxWidth: '620px',
@@ -429,7 +425,6 @@ export const NeuralChatView: React.FC = () => {
                 Ask anything grounded in enterprise truth. Knowra retrieves chunks with dual-branch hybrid search, expands to parent context, and verifies numbers before answering.
               </p>
 
-              {/* Quick Query Cards */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', width: '100%' }}>
                 {[
                   { title: 'Remote Work Policy', query: 'What is our company general policy on remote work?' },
@@ -463,7 +458,6 @@ export const NeuralChatView: React.FC = () => {
               </div>
             </div>
           ) : (
-            /* Rendered Messages */
             <>
               {messages.map((msg) => (
                 <div
@@ -475,7 +469,6 @@ export const NeuralChatView: React.FC = () => {
                     gap: '6px',
                   }}
                 >
-                  {/* Sender Header */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
                     {msg.role === 'user' ? (
                       <>
@@ -490,7 +483,6 @@ export const NeuralChatView: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Message Bubble Card */}
                   <div
                     className="glass-panel"
                     style={{
@@ -514,10 +506,8 @@ export const NeuralChatView: React.FC = () => {
                       <div>{renderFormattedMarkdown(msg.content)}</div>
                     )}
 
-                    {/* Citations and Grounding HUD for Assistant */}
                     {msg.role === 'assistant' && (
                       <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--border-subtle)' }}>
-                        {/* Grounding Status Indicator */}
                         {msg.metadata && typeof msg.metadata.groundingScore === 'number' && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
                             {msg.metadata.groundingScore >= 0.6 ? (
@@ -534,7 +524,6 @@ export const NeuralChatView: React.FC = () => {
                           </div>
                         )}
 
-                        {/* Clickable Citation Badges */}
                         {msg.citations && msg.citations.length > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                             {msg.citations.map((c, cIdx) => (
@@ -568,7 +557,6 @@ export const NeuralChatView: React.FC = () => {
                 </div>
               ))}
 
-              {/* Live Streaming Assistant Message */}
               {isStreaming && (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
@@ -623,7 +611,6 @@ export const NeuralChatView: React.FC = () => {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* 3. Floating Spatial Holographic Query Bar */}
         <div style={{
           padding: '16px 24px',
           borderTop: '1px solid var(--border-subtle)',
@@ -678,7 +665,6 @@ export const NeuralChatView: React.FC = () => {
               </span>
             </button>
 
-            {/* Document Scope Filter Selector */}
             {availableDocs.length > 0 && (
               <select
                 value={selectedDocId}

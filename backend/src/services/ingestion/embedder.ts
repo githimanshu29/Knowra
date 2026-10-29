@@ -165,21 +165,46 @@ export async function batchGenerateEmbeddings(
   for (let i = 0; i < texts.length; i += effectiveBatchSize) {
     const batchTexts = texts.slice(i, i + effectiveBatchSize).map((t) => t.replace(/\n/g, ' '));
 
-    try {
-      const response = await requestEmbeddingWithFallback(
-        config.client,
-        config.model,
-        batchTexts,
-        config.isGemini
-      );
+    let attempts = 0;
+    const maxBatchAttempts = 4;
+    let response: OpenAI.Embeddings.CreateEmbeddingResponse | null = null;
 
-      // Sort results by index to preserve input order
-      const sortedItems = response.data.sort((a, b) => a.index - b.index);
-      for (const item of sortedItems) {
-        allEmbeddings.push(adaptVectorDimension(item.embedding, 1536));
+    while (attempts < maxBatchAttempts) {
+      try {
+        attempts++;
+        response = await requestEmbeddingWithFallback(
+          config.client,
+          config.model,
+          batchTexts,
+          config.isGemini
+        );
+        break;
+      } catch (error) {
+        const errorMsg = (error as Error).message || '';
+        const isRateLimit = errorMsg.includes('429') || errorMsg.includes('quota') || errorMsg.includes('rate');
+        if (isRateLimit && attempts < maxBatchAttempts) {
+          const waitTime = attempts * 6000;
+          console.warn(`Gemini embedding rate limit hit (429). Backing off for ${waitTime}ms before retry...`);
+          await new Promise((res) => setTimeout(res, waitTime));
+        } else {
+          throw new Error(`Batch embedding request failed on slice ${i} to ${i + effectiveBatchSize}: ${errorMsg}`);
+        }
       }
-    } catch (error) {
-      throw new Error(`Batch embedding request failed on slice ${i} to ${i + effectiveBatchSize}: ${(error as Error).message}`);
+    }
+
+    if (!response) {
+      throw new Error(`Batch embedding request failed on slice ${i} to ${i + effectiveBatchSize}: response is null`);
+    }
+
+    // Sort results by index to preserve input order
+    const sortedItems = response.data.sort((a, b) => a.index - b.index);
+    for (const item of sortedItems) {
+      allEmbeddings.push(adaptVectorDimension(item.embedding, 1536));
+    }
+
+    // Polite delay between Gemini batches to stay within free tier rate limit
+    if (config.isGemini && i + effectiveBatchSize < texts.length) {
+      await new Promise((res) => setTimeout(res, 800));
     }
   }
 

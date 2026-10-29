@@ -14,6 +14,7 @@ import {
   Shield,
   Trash2,
   UploadCloud,
+  X,
 } from 'lucide-react';
 // Redux typed hooks and slice actions
 import { useAppDispatch, useAppSelector } from '../store/index.js';
@@ -26,8 +27,8 @@ import {
   setUploadProgress,
 } from '../store/slices/documentSlice.js';
 import { openAuthModal, openPermissionsModal } from '../store/slices/uiSlice.js';
-// API service client
-import { knowraApi } from '../services/api.js';
+// API service client and types
+import { knowraApi, type DocumentItem } from '../services/api.js';
 
 // Knowledge vault view featuring holographic drag-and-drop ingestion and RBAC controls
 // returns: React.JSX.Element
@@ -40,6 +41,7 @@ export const KnowledgeVaultView: React.FC = () => {
 
   const [dragOver, setDragOver] = useState(false);
   const [uploadFeedback, setUploadFeedback] = useState<string | null>(null);
+  const [selectedErrorDoc, setSelectedErrorDoc] = useState<DocumentItem | null>(null);
 
   // Loads documents from backend
   const loadDocuments = () => {
@@ -143,7 +145,6 @@ export const KnowledgeVaultView: React.FC = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* 1. Holographic Drag-and-Drop Ingestion Hub */}
       <div
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
@@ -192,12 +193,10 @@ export const KnowledgeVaultView: React.FC = () => {
           Knowra parses semantic headings, preserves tables, calculates SHA-256 deduplication hashes, and indexes dual-branch vector & tsvector candidates.
         </p>
 
-        {/* Upload Button */}
         <label htmlFor="vault-file-upload" className="btn-primary" style={{ cursor: 'pointer' }}>
           <span>Select Document from Disk</span>
         </label>
 
-        {/* Supported Format Pills */}
         <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '20px', flexWrap: 'wrap' }}>
           {[
             { label: 'PDF (Page-Aware)', color: '#ef4444' },
@@ -216,7 +215,6 @@ export const KnowledgeVaultView: React.FC = () => {
           ))}
         </div>
 
-        {/* Real-time Upload Progress Bar */}
         {isUploading && (
           <div style={{ maxWidth: '400px', margin: '20px auto 0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
@@ -235,7 +233,6 @@ export const KnowledgeVaultView: React.FC = () => {
           </div>
         )}
 
-        {/* Feedback Alert */}
         {uploadFeedback && (
           <div style={{
             display: 'inline-flex',
@@ -255,7 +252,6 @@ export const KnowledgeVaultView: React.FC = () => {
         )}
       </div>
 
-      {/* 2. Knowledge Vault Filter & Action Bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, maxWidth: '420px' }}>
           <div style={{ position: 'relative', width: '100%' }}>
@@ -282,7 +278,6 @@ export const KnowledgeVaultView: React.FC = () => {
         </button>
       </div>
 
-      {/* 3. Document Cards Grid */}
       {filteredDocuments.length === 0 ? (
         <div className="glass-panel" style={{ padding: '60px 20px', textAlign: 'center' }}>
           <Database size={36} color="var(--text-tertiary)" style={{ margin: '0 auto 12px' }} />
@@ -294,7 +289,7 @@ export const KnowledgeVaultView: React.FC = () => {
           </p>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '16px', alignItems: 'start' }}>
           {filteredDocuments.map((doc) => (
             <div
               key={doc.id}
@@ -309,10 +304,9 @@ export const KnowledgeVaultView: React.FC = () => {
                 transition: 'all var(--transition-fast)',
               }}
             >
-              {/* Header */}
               <div>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1, overflow: 'hidden' }}>
                     <div style={{
                       width: '36px',
                       height: '36px',
@@ -321,23 +315,45 @@ export const KnowledgeVaultView: React.FC = () => {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
+                      flexShrink: 0,
                     }}>
                       {getFormatIcon(doc.mimeType)}
                     </div>
-                    <div>
-                      <h4 style={{ fontSize: '0.96rem', color: '#fff', fontWeight: 600 }}>
+                    <div style={{ minWidth: 0, flex: 1, overflow: 'hidden' }}>
+                      <h4
+                        title={doc.title}
+                        style={{
+                          fontSize: '0.94rem',
+                          color: '#fff',
+                          fontWeight: 600,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          margin: 0,
+                        }}
+                      >
                         {doc.title}
                       </h4>
-                      <span style={{ fontSize: '0.74rem', color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>
+                      <span
+                        title={doc.filename}
+                        style={{
+                          fontSize: '0.74rem',
+                          color: 'var(--text-tertiary)',
+                          fontFamily: 'monospace',
+                          display: 'block',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          marginTop: '2px',
+                        }}
+                      >
                         {doc.filename}
                       </span>
                     </div>
                   </div>
                 </div>
 
-                {/* Status Badges */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
-                  {/* Ingestion Status */}
                   {doc.status === 'READY' && (
                     <span className="badge badge-ready">
                       <CheckCircle2 size={11} /> READY
@@ -354,12 +370,36 @@ export const KnowledgeVaultView: React.FC = () => {
                     </span>
                   )}
                   {doc.status === 'ERROR' && (
-                    <span className="badge badge-error" title={doc.errorMessage || 'Error'}>
-                      <AlertCircle size={11} /> ERROR
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedErrorDoc(doc)}
+                      className="badge badge-error"
+                      title="Click to view full error diagnostics"
+                      style={{
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        border: '1px solid rgba(244, 63, 94, 0.4)',
+                        background: 'rgba(244, 63, 94, 0.16)',
+                        color: '#fb7185',
+                        padding: '3px 8px',
+                        borderRadius: 'var(--radius-sm)',
+                        fontSize: '0.74rem',
+                        fontWeight: 600,
+                        transition: 'all var(--transition-fast)',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(244, 63, 94, 0.3)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(244, 63, 94, 0.16)';
+                      }}
+                    >
+                      <AlertCircle size={11} /> ERROR (View Log)
+                    </button>
                   )}
 
-                  {/* Publicity Status */}
                   {doc.isPublicWithinTenant ? (
                     <span className="badge" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8' }}>
                       <Globe size={11} /> PUBLIC TENANT
@@ -374,25 +414,8 @@ export const KnowledgeVaultView: React.FC = () => {
                     {formatBytes(doc.fileSizeBytes)}
                   </span>
                 </div>
-
-                {doc.status === 'ERROR' && doc.errorMessage && (
-                  <div style={{
-                    marginTop: '8px',
-                    padding: '8px 12px',
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'rgba(244, 63, 94, 0.08)',
-                    border: '1px solid rgba(244, 63, 94, 0.2)',
-                    fontSize: '0.72rem',
-                    color: '#fb7185',
-                    lineHeight: 1.4,
-                    wordBreak: 'break-word',
-                  }}>
-                    {doc.errorMessage}
-                  </div>
-                )}
               </div>
 
-              {/* Actions Footer */}
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -420,6 +443,115 @@ export const KnowledgeVaultView: React.FC = () => {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {selectedErrorDoc && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100,
+            background: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(10px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+          }}
+          onClick={() => setSelectedErrorDoc(null)}
+        >
+          <div
+            className="glass-panel"
+            style={{
+              maxWidth: '560px',
+              width: '100%',
+              background: 'rgba(14, 20, 36, 0.95)',
+              border: '1px solid rgba(244, 63, 94, 0.35)',
+              boxShadow: '0 0 40px rgba(244, 63, 94, 0.25)',
+              padding: '24px',
+              borderRadius: 'var(--radius-lg)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  background: 'rgba(244, 63, 94, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#fb7185',
+                }}>
+                  <AlertCircle size={20} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.05rem', color: '#fff', fontWeight: 600 }}>
+                    Ingestion Pipeline Diagnostic
+                  </h3>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                    DOCUMENT EMBEDDING EXCEPTION
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedErrorDoc(null)}
+                className="btn-ghost"
+                style={{ padding: '6px' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '10px 14px', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ fontSize: '0.84rem', color: '#f8fafc', fontWeight: 600 }}>
+                {selectedErrorDoc.filename}
+              </div>
+              <div style={{ fontSize: '0.74rem', color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>
+                Document ID: {selectedErrorDoc.id}
+              </div>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.74rem', color: 'var(--text-tertiary)', letterSpacing: '0.04em', display: 'block', marginBottom: '6px' }}>
+                ERROR DETAILS & RATE LIMIT LOG
+              </label>
+              <pre style={{
+                background: 'rgba(6, 10, 18, 0.9)',
+                border: '1px solid rgba(244, 63, 94, 0.25)',
+                borderRadius: 'var(--radius-md)',
+                padding: '14px',
+                fontSize: '0.78rem',
+                color: '#fca5a5',
+                lineHeight: 1.5,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                maxHeight: '220px',
+                overflowY: 'auto',
+                fontFamily: 'monospace',
+              }}>
+                {selectedErrorDoc.errorMessage || 'Unknown ingestion exception occurred.'}
+              </pre>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+              <button
+                type="button"
+                onClick={() => setSelectedErrorDoc(null)}
+                className="btn-primary"
+                style={{ padding: '8px 20px', fontSize: '0.84rem' }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
