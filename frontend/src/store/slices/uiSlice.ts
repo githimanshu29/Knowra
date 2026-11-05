@@ -1,7 +1,7 @@
 // Redux Toolkit slice for global UI modals, active views and drawers
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
-export type NavigationTab = 'intelligence' | 'vault' | 'security' | 'telemetry';
+export type NavigationTab = 'landing' | 'intelligence' | 'vault' | 'security' | 'telemetry';
 
 // State interface for global UI state
 export interface UiState {
@@ -13,8 +13,10 @@ export interface UiState {
   permissionDocTitle: string | null;
 }
 
+const storedToken = typeof window !== 'undefined' ? localStorage.getItem('knowra_token') : null;
+
 const initialState: UiState = {
-  activeView: 'intelligence',
+  activeView: storedToken ? 'intelligence' : 'landing',
   isAuthModalOpen: false,
   authModalTab: 'login',
   isPermissionsModalOpen: false,

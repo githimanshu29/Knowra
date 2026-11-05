@@ -13,7 +13,7 @@ import {
 // Redux typed hooks and slice actions
 import { useAppDispatch, useAppSelector } from '../store/index.js';
 import { setCredentials, setTenantSlug } from '../store/slices/authSlice.js';
-import { closeAuthModal, setAuthModalTab } from '../store/slices/uiSlice.js';
+import { closeAuthModal, setActiveView, setAuthModalTab } from '../store/slices/uiSlice.js';
 // API service wrapper
 import { knowraApi } from '../services/api.js';
 
@@ -48,6 +48,7 @@ export const AuthModal: React.FC = () => {
       // res is an Object { token: string, user: UserProfile }
       const res = await knowraApi.login(slug, email, password);
       dispatch(setCredentials({ token: res.token, user: res.user, tenantSlug: slug }));
+      dispatch(setActiveView('intelligence'));
       dispatch(closeAuthModal());
     } catch (err: unknown) {
       const errData = (err as { response?: { data?: { message?: string; error?: string } } })?.response?.data;
@@ -75,6 +76,7 @@ export const AuthModal: React.FC = () => {
 
       setSuccessMessage('Organization workspace created! Connecting...');
       dispatch(setCredentials({ token: res.token, user: res.user, tenantSlug: slug }));
+      dispatch(setActiveView('intelligence'));
       setTimeout(() => {
         dispatch(closeAuthModal());
       }, 700);
