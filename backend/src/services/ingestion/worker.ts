@@ -257,12 +257,17 @@ export async function processIngestionJob(jobId: string): Promise<IngestionJobRe
   }
 }
 
-// Triggers the ingestion job asynchronously in background without blocking HTTP response
+// Triggers the ingestion job via distributed BullMQ queue with in-memory fallback
 // returns: void
 export function triggerIngestionWorker(jobId: string): void {
-  // Dispatches async execution immediately on event loop
-  processIngestionJob(jobId).catch((err) => {
-    console.error(`Background ingestion job ${jobId} failed unhandled:`, err);
+  import('./queue.js').then(({ enqueueIngestionJob }) => {
+    enqueueIngestionJob(jobId).catch((err) => {
+      console.error(`Distributed ingestion job enqueue ${jobId} failed:`, err);
+    });
+  }).catch(() => {
+    processIngestionJob(jobId).catch((err) => {
+      console.error(`Background ingestion job ${jobId} failed:`, err);
+    });
   });
 }
 

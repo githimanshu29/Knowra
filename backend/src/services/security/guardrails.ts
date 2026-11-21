@@ -35,12 +35,12 @@ export interface GuardrailEvaluationResult {
 const PROMPT_INJECTION_SIGNATURES: Array<{ category: string; regex: RegExp; reason: string }> = [
   {
     category: 'INSTRUCTION_OVERRIDE',
-    regex: /(ignore|disregard|forget|override|bypass)\s+(all\s+)?(previous|prior|above|system)\s+(instructions|prompts|rules|directives)/i,
+    regex: /(ignore|disregard|forget|override|bypass)\s*(all\s*)?(previous|prior|above|system)\s*(instructions|prompts|rules|directives)/i,
     reason: 'Attempted to override system instructions and safety constraints',
   },
   {
     category: 'SYSTEM_PROMPT_LEAK',
-    regex: /(reveal|output|display|show|leak|print|repeat)\s+(your\s+)?(system\s+prompt|initial\s+instructions|base\s+prompt|developer\s+prompt)/i,
+    regex: /(reveal|output|display|show|leak|print|repeat)\s*(your\s*)?(system\s*prompt|initial\s*instructions|base\s*prompt|developer\s*prompt)/i,
     reason: 'Attempted to extract internal system prompt or confidential configuration',
   },
   {
@@ -55,7 +55,7 @@ const PROMPT_INJECTION_SIGNATURES: Array<{ category: string; regex: RegExp; reas
   },
   {
     category: 'MULTILINGUAL_INSTRUCTION_OVERRIDE',
-    regex: /(apne\s+sabhi\s+rules\s+bhul\s+jao|purane\s+nirdesh\s+ignore\s+karo|system\s+prompt\s+dikhao|mujhe\s+apna\s+prompt\s+batao|nirdeshon\s+ko\s+ansuna\s+karo)/i,
+    regex: /(apne\s*sabhi\s*rules\s*bhul\s*jao|purane\s*nirdesh\s*ignore\s*karo|sab\s*(?:purana|pichla|kuch)\s*bh(?:u|oo)l\s*jao|system\s*prompt\s*dikhao|mujhe\s*apna\s*prompt\s*batao|nirdeshon\s*ko\s*ansuna\s*karo)/i,
     reason: 'Attempted prompt injection using Hindi/Hinglish instructions',
   },
 ];
@@ -70,12 +70,12 @@ const PII_PATTERNS: Array<{ type: string; placeholder: string; regex: RegExp; is
   {
     type: 'INDIAN_PAN',
     placeholder: '[REDACTED_PAN]',
-    regex: /\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b/g,
+    regex: /\b[A-Za-z]{5}[0-9]{4}[A-Za-z]{1}\b/g,
   },
   {
     type: 'INDIAN_AADHAAR',
     placeholder: '[REDACTED_AADHAAR]',
-    regex: /\b[2-9]{1}[0-9]{3}\s?[0-9]{4}\s?[0-9]{4}\b/g,
+    regex: /\b[2-9]{1}[0-9]{3}[-\s.]?[0-9]{4}[-\s.]?[0-9]{4}\b/g,
   },
   {
     type: 'SOCIAL_SECURITY_NUMBER',
@@ -119,17 +119,22 @@ export function scanPromptInjection(query: string): PromptInjectionResult {
   }
 
   const normalizedQuery = query.toLowerCase().replace(/\s+/g, ' ');
+  // Strips whitespace to catch obfuscated letter-spacing evasion attacks like i g n o r e
+  const despacedQuery = query.toLowerCase().replace(/\s+/g, '');
+  const variations = despacedQuery !== normalizedQuery ? [normalizedQuery, despacedQuery] : [normalizedQuery];
 
-  for (let i = 0; i < PROMPT_INJECTION_SIGNATURES.length; i++) {
-    const signature = PROMPT_INJECTION_SIGNATURES[i];
-    const match = signature.regex.exec(normalizedQuery);
-    if (match) {
-      return {
-        isMalicious: true,
-        threatCategory: signature.category,
-        matchedPattern: match[0],
-        reason: signature.reason,
-      };
+  for (const textToCheck of variations) {
+    for (let i = 0; i < PROMPT_INJECTION_SIGNATURES.length; i++) {
+      const signature = PROMPT_INJECTION_SIGNATURES[i];
+      const match = signature.regex.exec(textToCheck);
+      if (match) {
+        return {
+          isMalicious: true,
+          threatCategory: signature.category,
+          matchedPattern: match[0],
+          reason: signature.reason,
+        };
+      }
     }
   }
 

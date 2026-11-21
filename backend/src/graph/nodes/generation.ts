@@ -7,31 +7,89 @@ import { env } from '../../config/env.js';
 // PII redaction service for sanitizing evidence contexts
 import { redactPii } from '../../services/security/guardrails.js';
 
-// Client instance factory resolving Gemini or OpenAI based on env configuration
-// returns: { client: OpenAI; model: string } | null
-function getLlmConfig(): { client: OpenAI; model: string } | null {
-  const useGemini = env.LLM_PROVIDER === 'gemini' || (!env.OPENAI_API_KEY && Boolean(env.GEMINI_API_KEY));
+// Provider tier configuration interface
+export interface LlmProviderTier {
+  provider: 'gemini' | 'openai';
+  model: string;
+  client: OpenAI;
+}
 
-  // 1. Google Gemini via OpenAI-compatible REST API
-  if (useGemini && env.GEMINI_API_KEY && env.GEMINI_API_KEY.trim().length > 0) {
-    return {
-      client: new OpenAI({
-        apiKey: env.GEMINI_API_KEY.trim(),
+// Client instance factory resolving multi-provider tier hierarchy
+// returns: LlmProviderTier[]
+export function getLlmProviderTiers(): LlmProviderTier[] {
+  const tiers: LlmProviderTier[] = [];
+
+  const hasGemini = Boolean(env.GEMINI_API_KEY && env.GEMINI_API_KEY.trim().length > 0);
+  const hasOpenai = Boolean(
+    env.OPENAI_API_KEY &&
+    env.OPENAI_API_KEY.trim().length > 0 &&
+    !env.OPENAI_API_KEY.includes('YOUR_OPENAI_API_KEY')
+  );
+
+  const geminiClient = hasGemini
+    ? new OpenAI({
+        apiKey: env.GEMINI_API_KEY!.trim(),
         baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-      }),
-      model: env.GEMINI_MODEL || 'gemini-2.0-flash',
-    };
+      })
+    : null;
+
+  const openaiClient = hasOpenai
+    ? new OpenAI({
+        apiKey: env.OPENAI_API_KEY!.trim(),
+      })
+    : null;
+
+  const preferredProvider = env.LLM_PROVIDER;
+
+  // Resolve prioritized tiers according to primary preference and cross-cloud fallbacks
+  if (preferredProvider === 'gemini' || !hasOpenai) {
+    if (geminiClient) {
+      // Primary tier Google Gemini 2.0 Flash
+      tiers.push({
+        provider: 'gemini',
+        model: env.GEMINI_MODEL || 'gemini-2.0-flash',
+        client: geminiClient,
+      });
+      // Secondary tier Google Gemini 2.0 Flash Lite for quota failover
+      tiers.push({
+        provider: 'gemini',
+        model: 'gemini-2.0-flash-lite',
+        client: geminiClient,
+      });
+    }
+    if (openaiClient) {
+      // Cross-cloud provider redundancy fallback tier
+      tiers.push({
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        client: openaiClient,
+      });
+    }
+  } else {
+    if (openaiClient) {
+      // Primary tier OpenAI
+      tiers.push({
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        client: openaiClient,
+      });
+    }
+    if (geminiClient) {
+      // Secondary cross-cloud fallback tier
+      tiers.push({
+        provider: 'gemini',
+        model: env.GEMINI_MODEL || 'gemini-2.0-flash',
+        client: geminiClient,
+      });
+      tiers.push({
+        provider: 'gemini',
+        model: 'gemini-2.0-flash-lite',
+        client: geminiClient,
+      });
+    }
   }
 
-  // 2. OpenAI provider fallback
-  if (env.OPENAI_API_KEY && env.OPENAI_API_KEY.trim().length > 0 && !env.OPENAI_API_KEY.includes('YOUR_OPENAI_API_KEY')) {
-    return {
-      client: new OpenAI({ apiKey: env.OPENAI_API_KEY.trim() }),
-      model: 'gpt-4o-mini',
-    };
-  }
-
-  return null;
+  return tiers;
 }
 
 // System instruction prompt enforcing strict citation and anti-hallucination guardrails
@@ -87,8 +145,8 @@ export async function generationNode(state: KnowraAgentState): Promise<Partial<K
     };
   }
 
-  const llmConfig = getLlmConfig();
-  if (!llmConfig) {
+  const tiers = getLlmProviderTiers();
+  if (tiers.length === 0) {
     throw new Error('LLM Generation Service is currently unavailable. Vector retrieval succeeded but neither GEMINI_API_KEY nor OPENAI_API_KEY is configured in backend/.env.');
   }
 
@@ -117,50 +175,62 @@ export async function generationNode(state: KnowraAgentState): Promise<Partial<K
   });
 
   let finalAnswer = '';
+  let resolvedProvider: string | undefined;
+  let resolvedModel: string | undefined;
+  let fallbackAttempted = false;
 
   try {
-    const { client, model } = llmConfig;
-    const isGemini = env.LLM_PROVIDER === 'gemini' || (!env.OPENAI_API_KEY && Boolean(env.GEMINI_API_KEY));
-    const modelsToTry = isGemini
-      ? [model, 'gemini-1.5-flash', 'gemini-2.0-flash-lite'].filter((m, i, arr) => arr.indexOf(m) === i)
-      : [model];
-
     let lastError: unknown;
     let generationSuccess = false;
 
+    // Stream generation with multi-provider cascading failover
     if (state.streamTokenCallback) {
-      // True token-by-token streaming directly from LLM API with fallback
-      for (const m of modelsToTry) {
+      for (let i = 0; i < tiers.length; i++) {
+        const tier = tiers[i];
+        if (i > 0) {
+          fallbackAttempted = true;
+        }
+
         try {
-          const stream = await client.chat.completions.create({
-            model: m,
+          const stream = await tier.client.chat.completions.create({
+            model: tier.model,
             temperature: 0,
             stream: true,
             messages: chatMessages,
           });
 
+          let tierAnswer = '';
           for await (const chunk of stream) {
             const delta = chunk.choices[0]?.delta?.content || '';
             if (delta.length > 0) {
-              finalAnswer += delta;
+              tierAnswer += delta;
               state.streamTokenCallback(delta);
             }
           }
+
+          finalAnswer = tierAnswer;
+          resolvedProvider = tier.provider;
+          resolvedModel = tier.model;
           generationSuccess = true;
           break;
         } catch (streamErr) {
           lastError = streamErr;
-          console.warn(`Streaming with model ${m} failed: ${(streamErr as Error).message}. Trying next fallback...`);
+          console.warn(`Streaming with ${tier.provider}:${tier.model} failed: ${(streamErr as Error).message}. Cascading to next tier...`);
         }
       }
     }
 
-    // Fallback to standard non-streaming completion if streaming failed or wasn't requested
+    // Fallback to standard non-streaming completion if streaming failed or was not requested
     if (!generationSuccess) {
-      for (const m of modelsToTry) {
+      for (let i = 0; i < tiers.length; i++) {
+        const tier = tiers[i];
+        if (i > 0) {
+          fallbackAttempted = true;
+        }
+
         try {
-          const completion = await client.chat.completions.create({
-            model: m,
+          const completion = await tier.client.chat.completions.create({
+            model: tier.model,
             temperature: 0,
             messages: chatMessages,
           });
@@ -169,11 +239,13 @@ export async function generationNode(state: KnowraAgentState): Promise<Partial<K
           if (state.streamTokenCallback && finalAnswer.length > 0) {
             state.streamTokenCallback(finalAnswer);
           }
+          resolvedProvider = tier.provider;
+          resolvedModel = tier.model;
           generationSuccess = true;
           break;
         } catch (compErr) {
           lastError = compErr;
-          console.warn(`Completion with model ${m} failed: ${(compErr as Error).message}. Trying next fallback...`);
+          console.warn(`Completion with ${tier.provider}:${tier.model} failed: ${(compErr as Error).message}. Cascading to next tier...`);
         }
       }
     }
@@ -182,7 +254,7 @@ export async function generationNode(state: KnowraAgentState): Promise<Partial<K
       throw lastError;
     }
   } catch (error) {
-    throw new Error(`Generation request failed: ${(error as Error).message}`);
+    throw new Error(`Generation request failed across all providers: ${(error as Error).message}`);
   }
 
   const durationMs = Date.now() - startTime;
@@ -193,6 +265,9 @@ export async function generationNode(state: KnowraAgentState): Promise<Partial<K
     executionMetrics: {
       ...state.executionMetrics,
       generationDurationMs: durationMs,
+      resolvedProvider,
+      resolvedModel,
+      fallbackAttempted,
     },
   };
 }

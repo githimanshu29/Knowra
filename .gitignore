@@ -5,3 +5,8 @@ problems/
 uploads/
 dist/
 *.log
+powershell.cmd
+end-to-end-stress-test-report.md
+tests/end-to-end-stress-test-report.md
+defend-interview.md
+defend*.md

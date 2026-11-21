@@ -52,6 +52,9 @@ export interface KnowraAgentState {
     generationDurationMs?: number;
     verificationDurationMs?: number;
     totalDurationMs?: number;
+    resolvedProvider?: string;
+    resolvedModel?: string;
+    fallbackAttempted?: boolean;
   };
 }
 
